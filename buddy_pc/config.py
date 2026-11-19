@@ -12,6 +12,12 @@ def _on(v):
     return str(v).strip().lower() in ("1", "on", "yes", "true")
 
 
+def _url(v):
+    """'192.168.4.2' -> 'http://192.168.4.2' (an address without http:// is fine)."""
+    v = v.strip().rstrip("/")
+    return v if not v or "://" in v else "http://" + v
+
+
 def load(path=CONFIG_FILE):
     # Windows hides extensions: "buddy.ini" typed in Explorer can be buddy.ini.ini or .txt.
     found = next((p for p in (path, path + ".ini", path + ".txt") if os.path.isfile(p)), None)
@@ -26,7 +32,7 @@ def load(path=CONFIG_FILE):
     return {
         "owner": g("owner_name", "my owner"),
         # Brain
-        "ollama": g("ollama_url", "http://localhost:11434").rstrip("/"),
+        "ollama": _url(g("ollama_url", "http://localhost:11434")),
         "chat_model": g("chat_model", "qwen3:4b-instruct"),
         "personality_file": os.path.join(HERE, g("personality_file", "personality.txt")),
         # Ears
@@ -44,7 +50,7 @@ def load(path=CONFIG_FILE):
         "voice": g("voice", "af_heart"),
         "volume": max(0, min(200, int(g("volume", "100")))),
         # The desk Buddy (shared memory) and Buddy's eyes (shared diary)
-        "desk_buddy_url": g("desk_buddy_url", "").rstrip("/"),
+        "desk_buddy_url": _url(g("desk_buddy_url", "")),
         "eyes_diary": g("eyes_diary", ""),
         # Window
         "window_width": max(160, int(g("window_width", "320"))),
