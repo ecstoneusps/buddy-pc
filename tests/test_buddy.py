@@ -308,6 +308,46 @@ def test_brain_uses_web_search_then_answers():
     assert second["messages"][-1]["role"] == "tool" and "Joey Chestnut won" in second["messages"][-1]["content"]
 
 
+def test_brain_nudges_when_he_only_promises_to_check():
+    import tempfile
+    from buddy_pc.brain import Brain
+    chats = []
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            chats.append(body)
+            self.send_response(200)
+            self.end_headers()
+            n = len(chats)
+            if n == 1:
+                m = {"content": "[happy] Let me check the weather for you."}
+            elif n == 2:
+                m = {"content": "", "tool_calls": [{"function": {"name": "get_weather", "arguments": {}}}]}
+            else:
+                m = {"content": "[cool] Sunny and 70!"}
+            self.wfile.write(json.dumps({"message": m, "done": True}).encode() + b"\n")
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    d = tempfile.mkdtemp()
+    cfg = {"owner": "Eric", "ollama": url, "chat_model": "m", "personality_file": os.path.join(d, "x"),
+           "eyes_diary": "", "notes_cache": os.path.join(d, "m.json"), "weather_place": "Nowhere"}
+    b = Brain(cfg, lambda *a, **k: None)
+    from unittest import mock
+    from buddy_pc import tools
+    with mock.patch.object(tools, "weather", lambda cfg: "Sunny, 70F."):
+        reply = "".join(b.chat("what's the weather?"))
+    srv.shutdown()
+    assert reply == "[happy] Let me check the weather for you. [cool] Sunny and 70!"
+    assert chats[1]["messages"][-1]["content"].startswith("[Go ahead")
+    assert chats[2]["messages"][-1] == {"role": "tool", "content": "Sunny, 70F.", "tool_name": "get_weather"}
+
+
 def test_weather_text():
     from unittest import mock
     from buddy_pc import tools

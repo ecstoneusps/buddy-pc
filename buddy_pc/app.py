@@ -310,10 +310,8 @@ class Buddy:
     def _learn_voice(self, who):
         """'Learn my voice': three samples through this microphone, added to the
         voiceprint the desk Buddy made (so he knows you through both)."""
-        if who == "other":
-            self._say("[thinking] Hmm, only my owner can teach me their voice. If that's you, try again somewhere "
-                      "quiet!")
-            return
+        # (No owner check here: until he's learned this microphone, even the owner
+        # can score as "someone else" through it.)
         prompts = ["[happy] Okay! I'll listen to you three times through this microphone. First, tell me a little "
                    "about yourself, a few sentences.",
                    "[happy] Got it! Two more. Now tell me about your favorite food.",

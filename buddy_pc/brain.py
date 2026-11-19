@@ -4,6 +4,7 @@ the desk Buddy) and what Buddy's eyes saw today."""
 import datetime as dt
 import json
 import os
+import re
 import threading
 import time
 
@@ -32,7 +33,8 @@ def limits(cfg):
     lines = []
     if can:
         lines.append("You can " + ", ".join(can) + " with your tools: use them whenever a question needs it, "
-                     "instead of guessing.")
+                     "instead of guessing. Call the tool straight away, in the same reply; don't just say you'll "
+                     "check.")
     missing = [what for key, what in (("search_url", "news, sports scores and prices"),
                                       ("weather_place", "the weather")) if not cfg.get(key)]
     if missing:
@@ -42,6 +44,11 @@ def limits(cfg):
                  "messes, what they always do): only use what they tell you or what's in your notes. Vary your "
                  "jokes; don't keep coming back to the same running gag.")
     return "[" + " ".join(lines) + "]\n"
+
+
+# "Let me check", "I'll look that up", "checking now"... (a promise to use a tool)
+PROMISE = re.compile(r"\b(let me (check|look|find|see|search|take a look|peek)|i'?ll (check|look|find|search|take a "
+                     r"look)|i will (check|look)|checking|looking (it|that) up|one (sec|second|moment))\b", re.I)
 
 
 class Brain:
@@ -105,7 +112,8 @@ class Brain:
             messages.append({"role": "user", "content": (extra + heard) if extra else heard})
             defs = tools.definitions(self.cfg)
             reply = []
-            for _ in range(3):  # at most a couple of tool rounds
+            nudged = False
+            for _ in range(4):  # at most a couple of tool rounds
                 body = {"model": self.cfg["chat_model"], "messages": messages, "stream": True, "keep_alive": "30m",
                         "options": {"temperature": 0.8, "num_ctx": self.cfg.get("context_size", 8192)}}
                 if defs:
@@ -131,6 +139,18 @@ class Brain:
                         if msg.get("done"):
                             break
                 if not calls:
+                    # "Let me check the weather for you." ...and then no tool call:
+                    # small models announce it and stop. Tell it to go ahead, once.
+                    text = "".join(said)
+                    if defs and not nudged and PROMISE.search(text):
+                        nudged = True
+                        self.log("(he said he'd check but didn't: asking him to go ahead)")
+                        messages.append({"role": "assistant", "content": text})
+                        messages.append({"role": "user", "content": "[Go ahead: use your tool now, then answer.]"})
+                        if not text.endswith((" ", "\n")):
+                            reply.append(" ")
+                            yield " "
+                        continue
                     break
                 messages.append({"role": "assistant", "content": "".join(said), "tool_calls": calls})
                 for c in calls:
