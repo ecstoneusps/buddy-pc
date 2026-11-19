@@ -1,0 +1,9 @@
+numpy
+Pillow
+requests
+sounddevice
+faster-whisper
+# The NVIDIA libraries faster-whisper needs on the graphics card (Windows/Linux).
+nvidia-cublas-cu12
+nvidia-cudnn-cu12>=9,<10
+openwakeword

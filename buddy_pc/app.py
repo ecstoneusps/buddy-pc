@@ -1,0 +1,259 @@
+"""Buddy on the PC: a small always-on-top window with his face, listening
+for the wake word (or a click), and talking back."""
+
+import datetime as dt
+import os
+import queue
+import threading
+import time
+import traceback
+
+from . import config as config_mod
+from .face import Face, expression_for
+from .textutil import is_cancel, is_clarify, sentence_end, split_reply
+
+DEBUG = bool(os.environ.get("BUDDY_DEBUG"))
+
+
+def log(msg, debug=False):
+    if debug and not DEBUG:
+        return
+    print(f"{dt.datetime.now().strftime('%H:%M:%S')} {msg}", flush=True)
+
+
+class Buddy:
+    """The conversation, on its own thread. The window only reads `state`."""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.state = "starting"       # starting, idle, listening, thinking, speaking
+        self.reply_expr = "happy"
+        self.linger_until = 0.0       # keep the reply's face a moment after talking
+        self.click = threading.Event()   # a click on the face: start listening
+        self.cancel = threading.Event()  # a click while busy: stop
+        self.speaker = None
+        threading.Thread(target=self._run, daemon=True, name="buddy").start()
+
+    # -- the window calls these ---------------------------------------------
+
+    def on_click(self):
+        if self.state == "idle":
+            self.click.set()
+        elif self.state in ("listening", "thinking", "speaking"):
+            log("click: cancelled")
+            self.cancel.set()
+            if self.speaker:
+                self.speaker.stop()
+
+    def expression(self):
+        if self.state == "starting":
+            return "sleepy"
+        if self.state == "listening":
+            return "listening"
+        if self.state == "thinking":
+            return "thinking"
+        if self.state == "speaking" or time.time() < self.linger_until:
+            return self.reply_expr
+        return "neutral"
+
+    def talk_level(self):
+        return self.speaker.level if self.speaker else 0.0
+
+    # -- the conversation ----------------------------------------------------
+
+    def _run(self):
+        try:
+            self._start()
+        except Exception as e:  # noqa: BLE001
+            traceback.print_exc()
+            log(f"Buddy couldn't start: {e}")
+            self.state = "starting"
+            return
+        self.state = "idle"
+        while True:
+            try:
+                self._idle_until_called()
+                self._conversation()
+            except Exception:  # noqa: BLE001 (keep going after anything unexpected)
+                traceback.print_exc()
+                self.state = "idle"
+                time.sleep(1)
+
+    def _start(self):
+        from .brain import Brain
+        from .hearing import Endpointer, Mic, Transcriber, WakeWord
+        from .voice import Speaker
+        cfg = self.cfg
+        self.speaker = Speaker(cfg, log)
+        self.brain = Brain(cfg, log)
+        self.ears = Transcriber(cfg, log)
+        self.mic = Mic(cfg["mic"])
+        self.endpoint = Endpointer()
+        self.wake = None
+        if cfg["wake_word"].lower() not in ("", "off", "none"):
+            try:
+                self.wake = WakeWord(cfg["wake_word"], cfg["wake_threshold"], log)
+                log(f"listening for the wake word \"{cfg['wake_word'].replace('_', ' ')}\" (or click my face)")
+            except Exception as e:  # noqa: BLE001
+                log(f"wake word off ({e}); click my face to talk")
+        else:
+            log("click my face to talk")
+        # Warm up the chat model so the first answer isn't slow.
+        threading.Thread(target=self._warm_up, daemon=True).start()
+
+    def _warm_up(self):
+        import requests
+        try:
+            requests.post(f"{self.cfg['ollama']}/api/generate",
+                          json={"model": self.cfg["chat_model"], "prompt": "", "keep_alive": "30m"}, timeout=120)
+        except requests.RequestException as e:
+            log(f"couldn't reach Ollama at {self.cfg['ollama']}: {e}")
+
+    def _idle_until_called(self):
+        self.state = "idle"
+        self.click.clear()
+        self.cancel.clear()
+        self.mic.drain()
+        if self.wake:
+            self.wake.reset()
+        while True:
+            if self.click.is_set():
+                log("click: listening")
+                return
+            try:
+                frame = self.mic.read(timeout=0.2)
+            except queue.Empty:
+                continue
+            if self.speaker.busy:
+                continue  # don't hear himself
+            self.endpoint.learn(frame)
+            if self.wake and self.wake.heard(frame):
+                log("wake word: listening")
+                return
+
+    def _conversation(self):
+        follow_up = False
+        while True:
+            self.state = "listening"
+            self.mic.drain()
+            self.endpoint.start_window = 5.0 if follow_up else 6.0
+            pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set)
+            if pcm is None or self.cancel.is_set():
+                log("no follow-up" if follow_up else "nothing said", debug=not follow_up)
+                return
+            self.state = "thinking"
+            t0 = time.time()
+            heard = self.ears.text(pcm)
+            log(f"heard: \"{heard}\" ({len(pcm) / 16000:.1f} s, {time.time() - t0:.2f} s to understand)")
+            if not heard or self.cancel.is_set():
+                return
+            if is_cancel(heard):
+                log("-> cancelled")
+                return
+            spoken, cancelled = self._answer(heard)
+            if cancelled or not self.cfg["follow_up"]:
+                return
+            if is_clarify(spoken):
+                log("-> he didn't understand; not listening for a follow-up")
+                return
+            time.sleep(0.25)  # let his own voice die away
+            follow_up = True
+
+    def _answer(self, heard):
+        """Streams the AI's answer, speaking each sentence as soon as it's
+        complete. Returns (what was said, cancelled)."""
+        text, used, started = "", 0, False
+        t0 = time.time()
+        try:
+            for piece in self.brain.chat(heard):
+                if self.cancel.is_set():
+                    break
+                text += piece
+                while (end := sentence_end(text, used)) >= 0:
+                    self._speak(text, used, end, first=not started)
+                    if not started:
+                        log(f"(first words after {time.time() - t0:.2f} s)", debug=True)
+                    started = True
+                    used = end
+        except Exception as e:  # noqa: BLE001
+            log(f"the AI didn't answer: {e}")
+            self.reply_expr = "confused"
+            self.linger_until = time.time() + 2
+            return "", True
+        if not self.cancel.is_set() and text[used:].strip():
+            self._speak(text, used, len(text), first=not started)
+        emotion, speech = split_reply(text)
+        log(f"reply [{emotion}]: \"{speech}\"")
+        self.speaker.end()
+        while not self.speaker.wait(0.1):
+            if self.cancel.is_set():
+                self.speaker.stop()
+        self.linger_until = time.time() + 1.5
+        return speech, self.cancel.is_set()
+
+    def _speak(self, text, start, end, first):
+        if first:
+            emotion, _ = split_reply(text)
+            self.reply_expr = expression_for(emotion) or "happy"
+            if self.reply_expr == "neutral":
+                self.reply_expr = "happy"
+            self.state = "speaking"
+        _, speech = split_reply(text[start:end])
+        if speech:
+            self.speaker.say(speech)
+
+
+# ---------------------------------------------------------------------------
+# The window
+
+def main():
+    import tkinter as tk
+    from PIL import ImageTk
+
+    cfg = config_mod.load()
+    log(f"Buddy on the PC: chat {cfg['chat_model']}, voice {cfg['voice']}, Whisper {cfg['whisper_model']}")
+    buddy = Buddy(cfg)
+    face = Face()
+
+    root = tk.Tk()
+    root.title("Buddy")
+    root.configure(bg="black")
+    w = cfg["window_width"]
+    root.geometry(f"{w}x{w * 3 // 4}")
+    root.minsize(160, 120)
+    on_top = tk.BooleanVar(value=cfg["always_on_top"])
+    root.attributes("-topmost", on_top.get())
+    label = tk.Label(root, bg="black", borderwidth=0, highlightthickness=0, cursor="hand2")
+    label.pack(fill="both", expand=True)
+
+    menu = tk.Menu(root, tearoff=0)
+    menu.add_checkbutton(label="Always on top", variable=on_top,
+                         command=lambda: root.attributes("-topmost", on_top.get()))
+    menu.add_separator()
+    menu.add_command(label="Quit", command=root.destroy)
+    label.bind("<Button-1>", lambda e: buddy.on_click())
+    label.bind("<Button-3>", lambda e: menu.tk_popup(e.x_root, e.y_root))
+    root.bind("<space>", lambda e: buddy.on_click())
+
+    last = [time.time()]
+    photo = [None]
+
+    def frame():
+        now = time.time()
+        dt_ms = min(100.0, (now - last[0]) * 1000.0)
+        last[0] = now
+        face.set_expression(buddy.expression())
+        face.set_talk_level(buddy.talk_level())
+        face.update(dt_ms)
+        width = max(160, label.winfo_width())
+        height = max(120, label.winfo_height())
+        photo[0] = ImageTk.PhotoImage(face.render(width, height))
+        label.configure(image=photo[0])
+        root.after(33, frame)
+
+    root.after(50, frame)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
