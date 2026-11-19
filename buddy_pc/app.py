@@ -10,7 +10,7 @@ import traceback
 
 from . import config as config_mod
 from .face import Face, expression_for
-from .textutil import is_cancel, is_clarify, sentence_end, split_reply
+from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
 DEBUG = bool(os.environ.get("BUDDY_DEBUG"))
 
@@ -23,6 +23,8 @@ def log(msg, debug=False):
 
 class Buddy:
     """The conversation, on its own thread. The window only reads `state`."""
+
+    echo_wait = 0.4  # seconds after he talks before listening again
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -134,11 +136,13 @@ class Buddy:
 
     def _conversation(self):
         follow_up = False
+        last_heard = ""
         while True:
             self.state = "listening"
             self.mic.drain()
             self.endpoint.start_window = 5.0 if follow_up else 6.0
-            pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set)
+            # After he talks, the first moments are the echo of his own voice.
+            pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set, ignore_first=0.7 if follow_up else 0)
             if pcm is None or self.cancel.is_set():
                 if follow_up:
                     log("no follow-up")
@@ -156,13 +160,18 @@ class Buddy:
             if is_cancel(heard):
                 log("-> cancelled")
                 return
+            # The same thing again straight after: an echo (or Whisper imagining it), not you.
+            if follow_up and normalize(heard) == normalize(last_heard):
+                log("-> heard the same thing again; that's an echo, not you")
+                return
+            last_heard = heard
             spoken, cancelled = self._answer(heard)
             if cancelled or not self.cfg["follow_up"]:
                 return
             if is_clarify(spoken):
                 log("-> he didn't understand; not listening for a follow-up")
                 return
-            time.sleep(0.25)  # let his own voice die away
+            time.sleep(self.echo_wait)  # let his own voice die away
             follow_up = True
 
     def _answer(self, heard):

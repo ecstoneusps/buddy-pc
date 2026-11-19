@@ -133,6 +133,22 @@ def test_endpointer_records_speech_then_stops():
     assert 10 * 1280 <= len(pcm) <= 22 * 1280  # the speech, a little before, the pause after
 
 
+def test_whisper_hallucinations_dropped():
+    from types import SimpleNamespace as S
+    from buddy_pc.hearing import hallucination
+    assert hallucination(S(text=" Thank you.", no_speech_prob=0.4, avg_logprob=-0.3))
+    assert hallucination(S(text=" Anything at all", no_speech_prob=0.8, avg_logprob=-0.2))
+    assert not hallucination(S(text=" Thank you.", no_speech_prob=0.02, avg_logprob=-0.2))  # you, clearly
+    assert not hallucination(S(text=" What day is it?", no_speech_prob=0.1, avg_logprob=-0.3))
+
+
+def test_endpointer_ignores_the_echo():
+    loud = [_tone(-25) for _ in range(6)]   # his echo, 0.5 s
+    quiet = [_tone(-65) for _ in range(15)]
+    ep = Endpointer(start_window=1.0, end_silence=0.5)
+    assert ep.record(FakeMic(loud + quiet), ignore_first=0.6) is None
+
+
 def test_endpointer_nothing_said():
     ep = Endpointer(start_window=0.5)
     assert ep.record(FakeMic([_tone(-65) for _ in range(20)])) is None
@@ -254,13 +270,14 @@ def _fake_buddy(replies, heard):
     from buddy_pc.app import Buddy
 
     b = Buddy.__new__(Buddy)
+    b.echo_wait = 0
     b.cfg = {"follow_up": True}
     b.state, b.reply_expr, b.linger_until = "idle", "happy", 0.0
     b.click, b.cancel = threading.Event(), threading.Event()
     b.speaker = FakeSpeaker()
     b.mic = type("M", (), {"drain": lambda self: None})()
     heard = list(heard)
-    b.endpoint = type("E", (), {"start_window": 6, "record": lambda self, mic, cancelled=None:
+    b.endpoint = type("E", (), {"start_window": 6, "record": lambda self, mic, cancelled=None, ignore_first=0:
                                 np.zeros(16000, np.int16) if heard else None})()
     b.ears = type("W", (), {"text": lambda self, pcm: heard.pop(0)})()
     replies = list(replies)
@@ -274,6 +291,12 @@ def test_conversation_speaks_sentence_by_sentence_and_follows_up():
     b._conversation()
     assert b.speaker.said == ["Ha!", "That's a good one, Eric.", "Want another?", "Sure thing."]
     assert b.reply_expr == "cool"
+
+
+def test_conversation_stops_on_a_repeated_echo():
+    b = _fake_buddy([["[happy] You're welcome!"], ["[happy] Anytime!"]], ["thank you", "Thank you.", "x"])
+    b._conversation()
+    assert b.speaker.said == ["You're welcome!"]
 
 
 def test_conversation_cancel_and_clarify_end_it():

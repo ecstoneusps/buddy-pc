@@ -88,9 +88,10 @@ class Endpointer:
         db = _db(frame)
         return db > max(self.floor + 12.0, -52.0)
 
-    def record(self, mic, preroll=(), cancelled=lambda: False):
+    def record(self, mic, preroll=(), cancelled=lambda: False, ignore_first=0.0):
         """Frames from when you start talking until you stop, or None if you
-        didn't say anything (or it was cancelled)."""
+        didn't say anything (or it was cancelled). The first `ignore_first`
+        seconds are skipped: right after he talks, that's his own echo."""
         frames = list(preroll)
         heard = False
         self.loudest = -120.0
@@ -102,8 +103,10 @@ class Endpointer:
                 f = mic.read()
             except queue.Empty:
                 continue
-            frames.append(f)
             now = time.time()
+            if now - t0 < ignore_first:
+                continue
+            frames.append(f)
             self.loudest = max(self.loudest, _db(f))
             if self.is_speech(f):
                 heard = True
@@ -190,4 +193,21 @@ class Transcriber:
         audio = pcm.astype(np.float32) / 32768.0
         segments, _ = self.model.transcribe(audio, language=self.cfg["language"] or None, beam_size=1,
                                             condition_on_previous_text=False, vad_filter=True)
-        return " ".join(s.text.strip() for s in segments).strip()
+        return " ".join(s.text.strip() for s in segments if not hallucination(s)).strip()
+
+
+# What Whisper "hears" in noise, an echo or silence (it was trained on a lot
+# of videos ending "thank you for watching").
+HALLUCINATIONS = {"thank you", "thanks", "thank you very much", "thank you so much", "thanks for watching",
+                  "thank you for watching", "thanks for listening", "you", "bye", "bye bye", "okay", "oh",
+                  "please subscribe", "subtitles by the amaraorg community", "so", "um", "hmm"}
+
+
+def hallucination(seg):
+    """True for a segment that's probably not real speech."""
+    from .textutil import normalize
+    if seg.no_speech_prob > 0.6 or seg.avg_logprob < -1.0:
+        return True
+    if normalize(seg.text) in HALLUCINATIONS and (seg.no_speech_prob > 0.15 or seg.avg_logprob < -0.5):
+        return True
+    return False
