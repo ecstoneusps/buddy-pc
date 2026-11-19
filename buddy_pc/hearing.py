@@ -20,16 +20,37 @@ def _db(frame):
     return 20 * np.log10(rms) if rms > 1e-6 else -120.0
 
 
+def find_device(name, kind, devices=None, hostapis=None):
+    """The device index whose name contains `name` (any case), or None for
+    Windows' default. Windows lists each device once per audio system
+    (MME, DirectSound, WASAPI...); the MME one is used, since it accepts any
+    sample rate. `kind` is "input" or "output"."""
+    if not name:
+        return None
+    if devices is None:
+        import sounddevice as sd
+        devices, hostapis = sd.query_devices(), sd.query_hostapis()
+    channels = "max_input_channels" if kind == "input" else "max_output_channels"
+    order = ["MME", "Windows DirectSound", "Windows WASAPI", "Windows WDM-KS"]
+    matches = [(i, d) for i, d in enumerate(devices) if d[channels] > 0 and name.lower() in d["name"].lower()]
+    if not matches:
+        raise ValueError(f"no {kind} device has \"{name}\" in its name (see list-devices.bat)")
+    api = lambda d: hostapis[d["hostapi"]]["name"] if hostapis else ""
+    matches.sort(key=lambda m: order.index(api(m[1])) if api(m[1]) in order else len(order))
+    return matches[0][0]
+
+
 class Mic:
     """The microphone as a queue of 80 ms int16 frames."""
 
     def __init__(self, device=None):
         import sounddevice as sd
         self.frames = queue.Queue(maxsize=200)
-        info = sd.query_devices(device or None, "input")
+        device = find_device(device, "input")
+        info = sd.query_devices(device, "input")
         self.name = info["name"]
         self.stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME,
-                                     device=device or None, callback=self._cb)
+                                     device=device, callback=self._cb)
         self.stream.start()
 
     def _cb(self, indata, frames, t, status):

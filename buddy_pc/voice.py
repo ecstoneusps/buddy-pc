@@ -139,6 +139,14 @@ class Speaker:
             self.log(f"(voice: {len(pcm) / rate:.1f} s of speech in {time.time() - t0:.2f} s)", debug=True)
             self._audio.put((rate, pcm))
 
+    def _speaker_device(self):
+        from .hearing import find_device
+        try:
+            return find_device(self.cfg["speaker"], "output")
+        except ValueError as e:
+            self.log(f"{e}; using Windows' default speakers")
+            return None
+
     def _play_loop(self):
         import sounddevice as sd
         out, out_rate = None, None
@@ -170,7 +178,7 @@ class Speaker:
                     if out is not None:
                         out.close()
                     out = sd.OutputStream(samplerate=rate, channels=1, dtype="int16",
-                                          device=self.cfg["speaker"] or None)
+                                          device=self._speaker_device())
                     out.start()
                     out_rate = rate
                 for i in range(0, len(pcm), block):

@@ -103,6 +103,26 @@ def _tone(db, n=1280):
     return (amp * np.sin(np.arange(n) * 2 * np.pi * 300 / 16000)).astype(np.int16)
 
 
+def test_find_device_prefers_mme_and_inputs():
+    from buddy_pc.hearing import find_device
+    apis = [{"name": "MME"}, {"name": "Windows WASAPI"}]
+    devs = [{"name": "Headset Microphone (Oculus Virtual Audio)", "hostapi": 0, "max_input_channels": 1,
+             "max_output_channels": 0},
+            {"name": "Microphone (HD Pro Webcam C920)", "hostapi": 1, "max_input_channels": 2,
+             "max_output_channels": 0},
+            {"name": "Microphone (HD Pro Webcam C92", "hostapi": 0, "max_input_channels": 2,
+             "max_output_channels": 0},
+            {"name": "Speakers (Webcam)", "hostapi": 0, "max_input_channels": 0, "max_output_channels": 2}]
+    assert find_device("webcam", "input", devs, apis) == 2      # the MME one
+    assert find_device("", "input", devs, apis) is None         # Windows' default
+    assert find_device("webcam", "output", devs, apis) == 3
+    try:
+        find_device("yeti", "input", devs, apis)
+        assert False
+    except ValueError:
+        pass
+
+
 def test_endpointer_records_speech_then_stops():
     quiet = [_tone(-65) for _ in range(5)]
     speech = [_tone(-25) for _ in range(10)]
