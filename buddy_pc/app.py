@@ -32,6 +32,7 @@ class Buddy:
     """The conversation, on its own thread. The window only reads `state`."""
 
     echo_wait = 0.4  # seconds after he talks before listening again
+    max_follow_ups = 3  # then the wake word again (so a TV can't keep him going)
     wake = None
 
     def __init__(self, cfg):
@@ -201,6 +202,7 @@ class Buddy:
     def _conversation(self, first=None):
         """`first`: what was said along with the wake word, if anything."""
         follow_up = False
+        follow_ups = 0
         last_heard = ""
         while True:
             self.state = "listening"
@@ -222,8 +224,10 @@ class Buddy:
                 return
             self.state = "thinking"
             t0 = time.time()
-            heard = self.ears.text(pcm)
-            log(f"heard: \"{heard}\" ({len(pcm) / 16000:.1f} s, {time.time() - t0:.2f} s to understand)"
+            phrase = getattr(self.wake, "phrase", None)
+            heard = self.ears.text(pcm, hotwords=phrase.title() if phrase else None, strict=follow_up)
+            log(f"heard: \"{heard}\" ({len(pcm) / 16000:.1f} s, loudest {self.endpoint.loudest:.0f} dB, "
+                f"{time.time() - t0:.2f} s to understand)"
                 + (" (stopped at the 20 s limit: something kept sounding like talking)" if self.endpoint.hit_limit
                    else ""))
             if self.cancel.is_set():
@@ -252,6 +256,10 @@ class Buddy:
                 return
             if is_clarify(spoken):
                 log("-> he didn't understand; not listening for a follow-up")
+                return
+            follow_ups += 1
+            if follow_ups > self.max_follow_ups:
+                log("-> that's a few in a row; say the wake word to carry on")
                 return
             time.sleep(self.echo_wait)  # let his own voice die away
             follow_up = True

@@ -246,8 +246,9 @@ class PhraseWake:
     def check(self, pcm):
         """(heard the phrase?, what tiny Whisper heard)."""
         audio = pcm.astype(np.float32) / 32768.0
-        segments, _ = self.model.transcribe(audio, language="en", beam_size=1, condition_on_previous_text=False,
-                                            without_timestamps=True, max_new_tokens=30)
+        segments, _ = self.model.transcribe(audio, language="en", beam_size=3, condition_on_previous_text=False,
+                                            without_timestamps=True, max_new_tokens=30,
+                                            hotwords=self.phrase.title())
         text = " ".join(s.text.strip() for s in segments).strip()
         return match_phrase(self.phrase, text) >= 0, text
 
@@ -300,14 +301,19 @@ class Transcriber:
         if self.model is None:
             raise RuntimeError("Whisper couldn't start")
 
-    def text(self, pcm):
+    def text(self, pcm, hotwords=None, strict=False):
+        """What was said. `hotwords` ("Hey Buddy") nudges Whisper toward those
+        words (so "hey buddy" isn't "anybody"); `strict` drops anything it isn't
+        quite sure was speech (for follow-ups, where nobody may be talking)."""
         audio = pcm.astype(np.float32) / 32768.0
         # No timestamps and a cap on its length: noise can make Whisper ramble
         # on for seconds (only to be thrown away as a hallucination).
         segments, _ = self.model.transcribe(audio, language=self.cfg["language"] or None, beam_size=1,
                                             condition_on_previous_text=False, vad_filter=True,
-                                            without_timestamps=True, max_new_tokens=100)
-        return " ".join(s.text.strip() for s in segments if not hallucination(s)).strip()
+                                            without_timestamps=True, max_new_tokens=100, hotwords=hotwords)
+        keep = [s for s in segments if not hallucination(s)
+                and not (strict and (s.avg_logprob < -0.6 or s.no_speech_prob > 0.4))]
+        return " ".join(s.text.strip() for s in keep).strip()
 
 
 # What Whisper "hears" in noise, an echo or silence (it was trained on a lot

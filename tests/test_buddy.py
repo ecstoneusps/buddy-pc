@@ -308,7 +308,7 @@ def _fake_buddy(replies, heard):
     heard = list(heard)
     b.endpoint = type("E", (), {"start_window": 6, "hit_limit": False, "record": lambda self, mic, cancelled=None, ignore_first=0:
                                 np.zeros(16000, np.int16) if heard else None})()
-    b.ears = type("W", (), {"text": lambda self, pcm: heard.pop(0)})()
+    b.ears = type("W", (), {"text": lambda self, pcm, hotwords=None, strict=False: heard.pop(0)})()
     replies = list(replies)
     b.brain = type("B", (), {"chat": lambda self, h: iter(replies.pop(0))})()
     return b
