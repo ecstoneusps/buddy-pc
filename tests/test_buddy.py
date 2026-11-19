@@ -465,7 +465,7 @@ def _fake_buddy(replies, heard):
                                 np.zeros(16000, np.int16) if heard else None})()
     b.ears = type("W", (), {"text": lambda self, pcm, hotwords=None, strict=False: heard.pop(0)})()
     replies = list(replies)
-    b.brain = type("B", (), {"chat": lambda self, h, extra="": iter(replies.pop(0))})()
+    b.brain = type("B", (), {"chat": lambda self, h, extra="", looked=False: iter(replies.pop(0))})()
     return b
 
 
@@ -566,6 +566,35 @@ def test_learn_my_voice_on_the_pc():
     said = " ".join(b.speaker.said)
     assert "I didn't catch that" in said and "That was a bit short" in said and "All done!" in said
     assert b.endpoint.end_silence == 0.9  # put back
+
+
+def test_vision_questions_look_first():
+    from unittest import mock
+    from buddy_pc import tools
+    assert T.is_vision_request("Hey Buddy, what is this in my hand?")
+    assert T.is_vision_request("How many fingers am I holding up?")
+    assert not T.is_vision_request("What's the weather?")
+    b = _fake_buddy([["[happy] An iPhone!"]], ["what am I holding?"])
+    b.cfg.update({"vision_model": "v", "follow_up": False})
+    seen = {}
+
+    def chat(h, extra="", looked=False):
+        seen["extra"], seen["looked"] = extra, looked
+        return iter(["[happy] An iPhone!"])
+
+    b.brain = type("B", (), {})()
+    b.brain.chat = chat
+    with mock.patch.object(tools, "look", lambda cfg, q, log: "Through your camera you see: a black iPhone."):
+        b._conversation()
+    assert seen["looked"] and "a black iPhone" in seen["extra"]
+    assert b.speaker.said == ["An iPhone!"]
+
+
+def test_false_wake_is_dropped():
+    b = _fake_buddy([["[happy] Hi!"]], ["Okay, let me see"])
+    b.wake = type("W", (), {"phrase": "hey buddy"})()
+    b._conversation(np.zeros(16000, np.int16))
+    assert b.speaker.said == []
 
 
 def test_conversation_cancel_and_clarify_end_it():

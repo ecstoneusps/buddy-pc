@@ -109,6 +109,23 @@ def is_cancel(heard):
     return any(p in s for p in _CANCEL_PART)
 
 
+_VISION = [" " + normalize(p) + " " for p in (
+    "what do you see", "what can you see", "what are you seeing", "what is this", "what's this", "what is that",
+    "what's that", "what am I holding", "what I'm holding", "look at this", "look at that", "take a look",
+    "can you see", "do you see", "describe what", "read this", "can you read", "what color is this",
+    "what colour is this", "what does this say", "who is this", "who's this", "how do I look",
+    "what am I wearing", "what's in front of you", "what is in front of you", "how many fingers",
+    "fingers am I holding", "am I holding up", "what am I showing", "look at me", "can you see me",
+    "what do I look like", "do I look", "what is on my", "what's on my", "what color is my",
+    "what colour is my", "what color am I", "see what I", "in my hand", "am I holding")]
+
+
+def is_vision_request(heard):
+    """A question he can only answer by looking ("what am I holding?")."""
+    h = " " + normalize(heard) + " "
+    return any(p in h for p in _VISION)
+
+
 _CLARIFY = [" " + normalize(p) + " " for p in (
     "rephrase", "say it again", "say that again", "repeat that", "repeat it", "didn't catch",
     "didn't quite catch", "didn't quite get", "didn't get that", "not sure I understand", "not sure I caught",

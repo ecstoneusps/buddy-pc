@@ -9,9 +9,10 @@ import time
 import traceback
 
 from . import config as config_mod
-from . import memory, voiceid
+from . import memory, tools, voiceid
 from .face import Face, expression_for
 from .hearing import loudest_db, strip_phrase
+from .textutil import is_vision_request
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
 DEBUG = bool(os.environ.get("BUDDY_DEBUG"))
@@ -33,6 +34,7 @@ class Buddy:
 
     echo_wait = 0.4  # seconds after he talks before listening again
     max_follow_ups = 3  # then the wake word again (so a TV can't keep him going)
+    your_level = -24.0  # how loud you usually are (dB), learned as you talk to him
     wake = None
 
     def __init__(self, cfg):
@@ -210,7 +212,12 @@ class Buddy:
             if not checked and (quiet > 0.5 or length >= 2.5):
                 checked = True
                 t0 = time.time()
-                woke, text = self.wake.check(np.concatenate(seg))
+                audio = np.concatenate(seg)
+                # Much quieter than you usually are: a video, the next room.
+                if loudest_db(audio) < self.your_level - 14:
+                    woke, text = False, "(too quiet to be for me)"
+                else:
+                    woke, text = self.wake.check(audio)
                 log(f"(wake check: \"{text}\", {time.time() - t0:.2f} s)", debug=True)
                 if woke:
                     log("wake word: listening")
@@ -231,7 +238,8 @@ class Buddy:
         your_level = None  # how loud you were (dB), from the last thing you said
         while True:
             self.state = "listening"
-            if first is not None:
+            with_wake = first is not None
+            if with_wake:
                 pcm, first = first, None
             else:
                 self.mic.drain()
@@ -267,6 +275,11 @@ class Buddy:
                 return
             if self.wake is not None and hasattr(self.wake, "phrase") and not follow_up:
                 rest = strip_phrase(self.wake.phrase, heard)
+                if with_wake and rest == heard:
+                    # The quick check thought it heard "Hey Buddy", the careful one
+                    # didn't: not for him after all.
+                    log("-> no \"hey buddy\" in that after all; going back to waiting")
+                    return
                 if rest != heard and not rest:
                     continue  # only "Hey Buddy" after all: listen for the question
                 heard = rest
@@ -281,6 +294,7 @@ class Buddy:
                 return
             last_heard = heard
             your_level = loudest_db(pcm)
+            self.your_level += (your_level - self.your_level) * 0.3  # for the wake word
             vid.join(3)
             if self.cfg.get("voice_id_url") and voiceid.is_enroll_request(heard):
                 self._learn_voice(who[0])
@@ -289,7 +303,17 @@ class Buddy:
             if kind:
                 spoken, cancelled = self._answer(heard, iter([self._memory(kind, fact)]))
             else:
-                spoken, cancelled = self._answer(heard, extra=voiceid.LINES.get(who[0], ""))
+                extra = voiceid.LINES.get(who[0], "")
+                looked = False
+                if self.cfg.get("vision_model") and is_vision_request(heard):
+                    # Look first, then answer from it (asked to call a tool for it,
+                    # he sometimes guessed first, or didn't look at all: a banana).
+                    self.state = "thinking"
+                    seen = tools.look(self.cfg, heard, log)
+                    extra += (f"[You just looked through your camera. {seen} Answer from that alone; if it "
+                              "doesn't show what was asked, say you can't quite tell.]\n")
+                    looked = True
+                spoken, cancelled = self._answer(heard, extra=extra, looked=looked)
             if cancelled or not self.cfg["follow_up"]:
                 return
             if is_clarify(spoken):
@@ -371,13 +395,13 @@ class Buddy:
                 log(f"-> notes: {len(new)} (kept on the PC; shared once the MQTT broker can be reached)")
         return reply
 
-    def _answer(self, heard, pieces=None, extra=""):
+    def _answer(self, heard, pieces=None, extra="", looked=False):
         """Streams the AI's answer (or `pieces`, a reply of our own), speaking
         each sentence as soon as it's complete. Returns (what was said, cancelled)."""
         text, used, started = "", 0, False
         t0 = time.time()
         try:
-            for piece in (pieces if pieces is not None else self.brain.chat(heard, extra=extra)):
+            for piece in (pieces if pieces is not None else self.brain.chat(heard, extra=extra, looked=looked)):
                 if self.cancel.is_set():
                     break
                 text += piece

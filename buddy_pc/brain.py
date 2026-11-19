@@ -104,13 +104,15 @@ class Brain:
         self.history = [h for h in self.history if h[0] >= cut]
         return [{"role": r, "content": t} for _, r, t in self.history]
 
-    def chat(self, heard, extra=""):
+    def chat(self, heard, extra="", looked=False):
         """Yields the reply as it's written (pieces of text). If the AI asks to
         search, check the weather or look, that's done and it carries on."""
         with self._lock:
             messages = [{"role": "system", "content": self.system_prompt()}] + self._recent()
             messages.append({"role": "user", "content": (extra + heard) if extra else heard})
             defs = tools.definitions(self.cfg)
+            if looked:  # already looked for this question
+                defs = [d for d in defs if d["function"]["name"] != "look"]
             reply = []
             nudged = False
             for _ in range(4):  # at most a couple of tool rounds
