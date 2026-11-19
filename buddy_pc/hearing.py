@@ -40,6 +40,18 @@ def find_device(name, kind, devices=None, hostapis=None):
     return matches[0][0]
 
 
+def voice_detector(log):
+    """Silero's voice detector from openWakeWord, or None if it isn't there."""
+    try:
+        import openwakeword.utils
+        from openwakeword.vad import VAD
+        openwakeword.utils.download_models(["silero_vad"])
+        return VAD()
+    except Exception as e:  # noqa: BLE001
+        log(f"voice detector off ({e}); going by loudness alone")
+        return None
+
+
 class Mic:
     """The microphone as a queue of 80 ms int16 frames."""
 
@@ -74,10 +86,14 @@ class Endpointer:
     """Decides when you started and stopped talking, from loudness compared
     with the room's background level (which it keeps learning)."""
 
-    def __init__(self, start_window=6.0, end_silence=0.9, max_len=20.0):
+    def __init__(self, start_window=6.0, end_silence=0.9, max_len=20.0, vad=None):
         self.start_window, self.end_silence, self.max_len = start_window, end_silence, max_len
         self.floor = -60.0
         self.loudest = -120.0  # in the last recording, for "I couldn't hear you" messages
+        # A voice detector (Silero, via openWakeWord): with it, only voices
+        # count as talking, not a fan, typing or music getting louder.
+        self.vad = vad
+        self.hit_limit = False
 
     def learn(self, frame):
         db = _db(frame)
@@ -86,7 +102,15 @@ class Endpointer:
 
     def is_speech(self, frame):
         db = _db(frame)
-        return db > max(self.floor + 12.0, -52.0)
+        if db <= max(self.floor + 12.0, -52.0):
+            return False
+        if self.vad is None:
+            return True
+        try:
+            return self.vad.predict(frame, frame_size=640) > 0.5
+        except Exception:  # noqa: BLE001 (the loudness alone, then)
+            self.vad = None
+            return True
 
     def record(self, mic, preroll=(), cancelled=lambda: False, ignore_first=0.0):
         """Frames from when you start talking until you stop, or None if you
@@ -95,6 +119,9 @@ class Endpointer:
         frames = list(preroll)
         heard = False
         self.loudest = -120.0
+        self.hit_limit = False
+        if self.vad is not None:
+            self.vad.reset_states()
         t0 = last = time.time()
         while True:
             if cancelled():
@@ -119,6 +146,7 @@ class Endpointer:
             if heard and now - last > self.end_silence:
                 return np.concatenate(frames)
             if now - t0 > self.max_len:
+                self.hit_limit = True
                 return np.concatenate(frames) if heard else None
 
 

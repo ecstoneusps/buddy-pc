@@ -84,7 +84,7 @@ class Buddy:
 
     def _start(self):
         from .brain import Brain
-        from .hearing import Endpointer, Mic, Transcriber, WakeWord
+        from .hearing import Endpointer, Mic, Transcriber, WakeWord, voice_detector
         from .voice import Speaker
         cfg = self.cfg
         self.speaker = Speaker(cfg, log)
@@ -92,7 +92,7 @@ class Buddy:
         self.ears = Transcriber(cfg, log)
         self.mic = Mic(cfg["mic"])
         log(f"microphone: {self.mic.name}")
-        self.endpoint = Endpointer()
+        self.endpoint = Endpointer(vad=voice_detector(log))
         self.wake = None
         if cfg["wake_word"].lower() not in ("", "off", "none"):
             try:
@@ -155,7 +155,9 @@ class Buddy:
             self.state = "thinking"
             t0 = time.time()
             heard = self.ears.text(pcm)
-            log(f"heard: \"{heard}\" ({len(pcm) / 16000:.1f} s, {time.time() - t0:.2f} s to understand)")
+            log(f"heard: \"{heard}\" ({len(pcm) / 16000:.1f} s, {time.time() - t0:.2f} s to understand)"
+                + (" (stopped at the 20 s limit: something kept sounding like talking)" if self.endpoint.hit_limit
+                   else ""))
             if not heard or self.cancel.is_set():
                 return
             if is_cancel(heard):

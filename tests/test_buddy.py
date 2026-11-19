@@ -149,6 +149,18 @@ def test_endpointer_ignores_the_echo():
     assert ep.record(FakeMic(loud + quiet), ignore_first=0.6) is None
 
 
+def test_endpointer_ignores_loud_noise_with_a_voice_detector():
+    class NoVoice:
+        def reset_states(self):
+            pass
+
+        def predict(self, frame, frame_size=640):
+            return 0.05  # a fan: loud, but not a voice
+
+    ep = Endpointer(start_window=0.6, vad=NoVoice())
+    assert ep.record(FakeMic([_tone(-25) for _ in range(12)])) is None
+
+
 def test_endpointer_nothing_said():
     ep = Endpointer(start_window=0.5)
     assert ep.record(FakeMic([_tone(-65) for _ in range(20)])) is None
@@ -294,7 +306,7 @@ def _fake_buddy(replies, heard):
     b.speaker = FakeSpeaker()
     b.mic = type("M", (), {"drain": lambda self: None})()
     heard = list(heard)
-    b.endpoint = type("E", (), {"start_window": 6, "record": lambda self, mic, cancelled=None, ignore_first=0:
+    b.endpoint = type("E", (), {"start_window": 6, "hit_limit": False, "record": lambda self, mic, cancelled=None, ignore_first=0:
                                 np.zeros(16000, np.int16) if heard else None})()
     b.ears = type("W", (), {"text": lambda self, pcm: heard.pop(0)})()
     replies = list(replies)
