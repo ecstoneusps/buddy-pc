@@ -26,7 +26,9 @@ HISTORY_MINUTES = 5
 # Until he has tools on the PC: say so instead of inventing a forecast.
 LIMITS = ("[In this PC body you can't look anything up yet: no weather, news, sports scores, prices or "
           "anything else live. If asked, say playfully that you can't check from here (your desk body can), "
-          "and never make up a forecast, score or fact.]\n")
+          "and never make up a forecast, score or fact. Don't invent things about your owner's life, habits or "
+          "home either (what they drink or eat, spills, messes, what they always do): only use what they tell "
+          "you or what's in your notes. Vary your jokes; don't keep coming back to the same running gag.]\n")
 
 
 class Brain:
