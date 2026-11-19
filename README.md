@@ -82,10 +82,18 @@ broker, so it's there even when the other body is off: the desk Buddy picks up
 changes when he starts, and the PC Buddy keeps a copy in `memories.json` for
 when the broker can't be reached. (Needs desk Buddy firmware from build 90 on.)
 
+## Who answers "Hey Buddy"
+
+While the PC Buddy is running and listening for "Hey Buddy", he answers it
+and the desk Buddy stays quiet (desk Buddy firmware from build 91 on). He
+tells the desk Buddy over MQTT (`buddy_pc/status`, `buddy_pc/wake_word`);
+when you quit him, or the PC goes to sleep, the desk Buddy answers again
+(within about a minute if the PC just disappears). While the PC Buddy listens
+for "Hey Jarvis", the desk Buddy keeps answering "Hey Buddy".
+
 ## Coming next
 
-- Coordination with the desk Buddy over MQTT, so only one answers, then a
-  trained "Hey Buddy" wake word.
+- A trained "Hey Buddy" wake word.
 - Web search (SearXNG), seeing through the webcam, and voice ID.
 
 ## Tests

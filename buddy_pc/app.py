@@ -293,6 +293,8 @@ def main():
 
     root.after(50, frame)
     root.mainloop()
+    if getattr(buddy, "brain", None):
+        buddy.brain.shared.close()
 
 
 if __name__ == "__main__":
