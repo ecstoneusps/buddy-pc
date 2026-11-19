@@ -309,7 +309,11 @@ class Buddy:
                     # Look first, then answer from it (asked to call a tool for it,
                     # he sometimes guessed first, or didn't look at all: a banana).
                     self.state = "thinking"
-                    seen = tools.look(self.cfg, heard, log)
+                    try:
+                        seen = tools.look(self.cfg, heard, log)
+                    except Exception as e:  # noqa: BLE001 (answer anyway, honestly)
+                        log(f"couldn't look: {e}")
+                        seen = "You couldn't get a look through your camera just now (something went wrong)."
                     extra += (f"[You just looked through your camera. {seen} Answer from that alone; if it "
                               "doesn't show what was asked, say you can't quite tell.]\n")
                     looked = True

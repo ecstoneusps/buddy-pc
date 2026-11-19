@@ -166,10 +166,16 @@ def look(cfg, question, log):
     prompt = (f"This is a webcam picture of {cfg['owner']} at their desk. {question} Answer briefly and only "
               "from what you can clearly see; if you can't tell, say so. To count fingers, count each raised "
               "finger one by one.")
-    r = requests.post(f"{cfg['ollama']}/api/chat", json={
-        "model": cfg["vision_model"], "stream": False, "keep_alive": "10m",
-        "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(jpg).decode()]}]},
-        timeout=120)
+    body = {"model": cfg["vision_model"], "stream": False, "keep_alive": "10m",
+            "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(jpg).decode()]}]}
+    for attempt in (1, 2):
+        r = requests.post(f"{cfg['ollama']}/api/chat", json=body, timeout=120)
+        if r.ok:
+            break
+        # Ollama says what went wrong in the body ({"error": "..."}).
+        log(f"the vision model failed (HTTP {r.status_code}): {r.text[:300]}")
+        if attempt == 1:
+            time.sleep(1.0)
     r.raise_for_status()
     seen = r.json().get("message", {}).get("content", "").strip()
     log(f"(looked: {seen})")
