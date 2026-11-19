@@ -221,8 +221,11 @@ class Transcriber:
 
     def text(self, pcm):
         audio = pcm.astype(np.float32) / 32768.0
+        # No timestamps and a cap on its length: noise can make Whisper ramble
+        # on for seconds (only to be thrown away as a hallucination).
         segments, _ = self.model.transcribe(audio, language=self.cfg["language"] or None, beam_size=1,
-                                            condition_on_previous_text=False, vad_filter=True)
+                                            condition_on_previous_text=False, vad_filter=True,
+                                            without_timestamps=True, max_new_tokens=100)
         return " ".join(s.text.strip() for s in segments if not hallucination(s)).strip()
 
 
