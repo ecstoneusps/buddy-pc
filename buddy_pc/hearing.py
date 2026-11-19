@@ -184,6 +184,78 @@ class WakeWord:
 
 
 # ---------------------------------------------------------------------------
+# A wake word without training: a tiny Whisper model checks the start of
+# anything said for the phrase ("hey buddy"). It only runs when a voice is
+# heard, takes a fraction of a second on the processor, and copes with
+# "hey buddy" heard as "hey body" or "heybuddy".
+
+OWW_MODELS = {"hey_jarvis", "alexa", "hey_mycroft", "hey_rhasspy", "ok_nabu", "timer", "weather"}
+
+
+def is_phrase_wake_word(name):
+    """'hey buddy' (a phrase for PhraseWake) rather than an openWakeWord model."""
+    n = name.strip().lower()
+    return bool(n) and n not in OWW_MODELS and not n.endswith((".onnx", ".tflite")) and n not in ("off", "none")
+
+
+def match_phrase(phrase, text):
+    """Where the phrase ends in `text` if it's said near the start (within
+    the first few words), allowing for small mishearings; else -1. The result
+    counts words of normalize(text)."""
+    from difflib import SequenceMatcher
+    from .textutil import normalize
+    want = normalize(phrase.replace("_", " "))
+    n = len(want.split())
+    words = normalize(text).split()
+    want_words = want.split()
+    same = {"hey": {"hi", "hay", "heh", "a", "okay"}, "ok": {"okay"}, "okay": {"ok"}}
+    sim = lambda a, b: 1.0 if a == b or a in same.get(b, ()) else SequenceMatcher(None, a, b).ratio()
+    for start in range(0, min(3, len(words))):
+        # Word by word ("hey body": each word close enough, and close overall).
+        got = words[start:start + n]
+        if len(got) == n:
+            scores = [sim(a, b) for a, b in zip(got, want_words)]
+            if min(scores) >= 0.6 and sum(scores) / n >= 0.75:
+                return start + n
+        # Run together ("heybuddy").
+        if n > 1 and start < len(words) and sim(words[start], want.replace(" ", "")) >= 0.85:
+            return start + 1
+    return -1
+
+
+def strip_phrase(phrase, text):
+    """'Hey Buddy, what time is it?' -> 'what time is it?' ("" if only the phrase)."""
+    end = match_phrase(phrase, text)
+    if end < 0:
+        return text
+    tokens = text.split()
+    from .textutil import normalize
+    count, i = 0, 0
+    while i < len(tokens) and count < end:  # skip the tokens holding the first `end` words
+        count += len(normalize(tokens[i]).split())
+        i += 1
+    return " ".join(tokens[i:]).lstrip(" ,.!?-").strip()
+
+
+class PhraseWake:
+    def __init__(self, phrase, log):
+        from faster_whisper import WhisperModel
+        self.phrase = phrase.replace("_", " ").strip()
+        self.model = WhisperModel("tiny.en", device="cpu", compute_type="int8", cpu_threads=2)
+
+    def check(self, pcm):
+        """(heard the phrase?, what tiny Whisper heard)."""
+        audio = pcm.astype(np.float32) / 32768.0
+        segments, _ = self.model.transcribe(audio, language="en", beam_size=1, condition_on_previous_text=False,
+                                            without_timestamps=True, max_new_tokens=30)
+        text = " ".join(s.text.strip() for s in segments).strip()
+        return match_phrase(self.phrase, text) >= 0, text
+
+    def reset(self):
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Whisper
 
 def _add_cuda_dlls():

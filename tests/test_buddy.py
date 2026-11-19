@@ -362,6 +362,28 @@ def test_conversation_remember_goes_to_the_shared_notes():
     assert json.loads(sent[0][1])["version"] == 5
 
 
+def test_wake_phrase_matching():
+    from buddy_pc.hearing import is_phrase_wake_word, match_phrase, strip_phrase
+    assert is_phrase_wake_word("hey buddy") and is_phrase_wake_word("hey_buddy")
+    assert not is_phrase_wake_word("hey_jarvis") and not is_phrase_wake_word("hey_buddy.onnx")
+    for yes in ("Hey Buddy.", "Hey, buddy!", "Hi buddy", "A buddy, are you there?", "hey body", "Heybuddy what's up", "Okay hey buddy",
+                "Hey buddy, what time is it?"):
+        assert match_phrase("hey buddy", yes) >= 0, yes
+    for no in ("Hey everybody, welcome back to the channel", "That's my buddy over there", "", "Hi there"):
+        assert match_phrase("hey buddy", no) < 0, no
+    assert strip_phrase("hey buddy", "Hey, Buddy, what time is it?") == "what time is it?"
+    assert strip_phrase("hey buddy", "Hey Buddy.") == ""
+    assert strip_phrase("hey buddy", "What time is it?") == "What time is it?"
+
+
+def test_conversation_with_the_question_said_with_the_wake_word():
+    b = _fake_buddy([["[happy] It's noon."]], ["Hey Buddy, what time is it?"])
+    b.wake = type("W", (), {"phrase": "hey buddy"})()
+    b.cfg["follow_up"] = False
+    b._conversation(np.zeros(16000, np.int16))
+    assert b.speaker.said == ["It's noon."]
+
+
 def test_conversation_cancel_and_clarify_end_it():
     b = _fake_buddy([], ["never mind"])
     b._conversation()

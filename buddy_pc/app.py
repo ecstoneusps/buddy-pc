@@ -11,6 +11,7 @@ import traceback
 from . import config as config_mod
 from . import memory
 from .face import Face, expression_for
+from .hearing import strip_phrase
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
 DEBUG = bool(os.environ.get("BUDDY_DEBUG"))
@@ -22,10 +23,16 @@ def log(msg, debug=False):
     print(f"{dt.datetime.now().strftime('%H:%M:%S')} {msg}", flush=True)
 
 
+def PhraseWakeType():
+    from .hearing import PhraseWake
+    return PhraseWake
+
+
 class Buddy:
     """The conversation, on its own thread. The window only reads `state`."""
 
     echo_wait = 0.4  # seconds after he talks before listening again
+    wake = None
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -75,8 +82,7 @@ class Buddy:
         self.state = "idle"
         while True:
             try:
-                self._idle_until_called()
-                self._conversation()
+                self._conversation(self._idle_until_called())
             except Exception:  # noqa: BLE001 (keep going after anything unexpected)
                 traceback.print_exc()
                 self.state = "idle"
@@ -84,7 +90,8 @@ class Buddy:
 
     def _start(self):
         from .brain import Brain
-        from .hearing import Endpointer, Mic, Transcriber, WakeWord, voice_detector
+        from .hearing import (Endpointer, Mic, PhraseWake, Transcriber, WakeWord, is_phrase_wake_word,
+                              voice_detector)
         from .voice import Speaker
         cfg = self.cfg
         self.speaker = Speaker(cfg, log)
@@ -96,7 +103,10 @@ class Buddy:
         self.wake = None
         if cfg["wake_word"].lower() not in ("", "off", "none"):
             try:
-                self.wake = WakeWord(cfg["wake_word"], cfg["wake_threshold"], log)
+                if is_phrase_wake_word(cfg["wake_word"]):
+                    self.wake = PhraseWake(cfg["wake_word"], log)
+                else:
+                    self.wake = WakeWord(cfg["wake_word"], cfg["wake_threshold"], log)
                 log(f"listening for the wake word \"{cfg['wake_word'].replace('_', ' ')}\" (or click my face)")
             except Exception as e:  # noqa: BLE001
                 log(f"wake word off ({e}); click my face to talk")
@@ -114,16 +124,20 @@ class Buddy:
             log(f"couldn't reach Ollama at {self.cfg['ollama']}: {e}")
 
     def _idle_until_called(self):
+        """Waits for a click or the wake word. Returns what was said along with
+        the wake word ("Hey Buddy, what time is it?" in one go), or None."""
         self.state = "idle"
         self.click.clear()
         self.cancel.clear()
         self.mic.drain()
         if self.wake:
             self.wake.reset()
+        if isinstance(self.wake, PhraseWakeType()):
+            return self._idle_phrase()
         while True:
             if self.click.is_set():
                 log("click: listening")
-                return
+                return None
             try:
                 frame = self.mic.read(timeout=0.2)
             except queue.Empty:
@@ -133,17 +147,71 @@ class Buddy:
             self.endpoint.learn(frame)
             if self.wake and self.wake.heard(frame):
                 log("wake word: listening")
-                return
+                return None
 
-    def _conversation(self):
+    def _idle_phrase(self):
+        """Wake word by phrase: each time someone starts talking, the tiny
+        Whisper model checks the first moments for "hey buddy". If you carry
+        on talking, that's the question."""
+        import numpy as np
+        seg, pre = [], []
+        last_voice = 0.0
+        checked = woke = False
+        while True:
+            if self.click.is_set():
+                log("click: listening")
+                return None
+            try:
+                frame = self.mic.read(timeout=0.2)
+            except queue.Empty:
+                continue
+            if self.speaker.busy:
+                seg = []
+                continue  # don't hear himself
+            now = time.time()
+            voice = self.endpoint.is_speech(frame)
+            if not seg:
+                if voice:
+                    seg, last_voice, checked, woke = pre + [frame], now, False, False
+                else:
+                    self.endpoint.learn(frame)
+                    pre = (pre + [frame])[-3:]
+                continue
+            seg.append(frame)
+            if voice:
+                last_voice = now
+            quiet = now - last_voice
+            length = len(seg) * 0.08
+            if not checked and (quiet > 0.5 or length >= 2.5):
+                checked = True
+                t0 = time.time()
+                woke, text = self.wake.check(np.concatenate(seg))
+                log(f"(wake check: \"{text}\", {time.time() - t0:.2f} s)", debug=True)
+                if woke:
+                    log("wake word: listening")
+                    if quiet > 0.5 and length < 1.6:
+                        return None  # just "Hey Buddy": now listen for the question
+            if checked and not woke:
+                if quiet > 0.5:
+                    seg = []  # someone talking, but not to him
+                continue
+            if woke and (quiet > 0.9 or length > 20):
+                return np.concatenate(seg)  # "Hey Buddy, ..." and the question in one go
+
+    def _conversation(self, first=None):
+        """`first`: what was said along with the wake word, if anything."""
         follow_up = False
         last_heard = ""
         while True:
             self.state = "listening"
-            self.mic.drain()
-            self.endpoint.start_window = 5.0 if follow_up else 6.0
-            # After he talks, the first moments are the echo of his own voice.
-            pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set, ignore_first=0.7 if follow_up else 0)
+            if first is not None:
+                pcm, first = first, None
+            else:
+                self.mic.drain()
+                self.endpoint.start_window = 5.0 if follow_up else 6.0
+                # After he talks, the first moments are the echo of his own voice.
+                pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set,
+                                           ignore_first=0.7 if follow_up else 0)
             if pcm is None or self.cancel.is_set():
                 if follow_up:
                     log("no follow-up")
@@ -158,7 +226,14 @@ class Buddy:
             log(f"heard: \"{heard}\" ({len(pcm) / 16000:.1f} s, {time.time() - t0:.2f} s to understand)"
                 + (" (stopped at the 20 s limit: something kept sounding like talking)" if self.endpoint.hit_limit
                    else ""))
-            if not heard or self.cancel.is_set():
+            if self.cancel.is_set():
+                return
+            if self.wake is not None and hasattr(self.wake, "phrase") and not follow_up:
+                rest = strip_phrase(self.wake.phrase, heard)
+                if rest != heard and not rest:
+                    continue  # only "Hey Buddy" after all: listen for the question
+                heard = rest
+            if not heard:
                 return
             if is_cancel(heard):
                 log("-> cancelled")

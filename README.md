@@ -13,8 +13,9 @@ The desk Buddy lives in
 
 ## Talking to him
 
-- Say **"Hey Jarvis"** (for now; a trained "Hey Buddy" comes later), or
-  **click his face**, or press the **space bar** with his window selected.
+- Say **"Hey Buddy"** (`wake_word = hey buddy`), or **click his face**, or
+  press the **space bar** with his window selected. You can say the question
+  in the same breath: "Hey Buddy, what time is it?"
   His eyes go big and green: he's listening.
 - He thinks (eyes up and to the side), then answers out loud with his face
   showing the mood of the answer and his mouth moving with his voice.
@@ -34,7 +35,7 @@ The desk Buddy lives in
 | Part | What | Notes |
 |---|---|---|
 | Ears | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `large-v3-turbo` | On the NVIDIA card; falls back to the processor (with the smaller `small` model) if the card can't be used |
-| Wake word | [openWakeWord](https://github.com/dscripka/openWakeWord) | `hey_jarvis` until a "Hey Buddy" model is trained |
+| Wake word | Whisper `tiny.en` checks the start of anything said for "hey buddy" (no training); [openWakeWord](https://github.com/dscripka/openWakeWord) models (`hey_jarvis`, or a trained `.onnx`) work too | Silero's voice detector decides when someone is talking |
 | Brain | Ollama, `qwen3:4b-instruct` | `personality.txt` is his personality; the desk Buddy's notes and today's diary are added |
 | Voice | Kokoro (the `kokoro-wyoming` Docker container Home Assistant already uses, port 10210) | Same voice as the desk Buddy |
 
@@ -93,7 +94,6 @@ for "Hey Jarvis", the desk Buddy keeps answering "Hey Buddy".
 
 ## Coming next
 
-- A trained "Hey Buddy" wake word.
 - Web search (SearXNG), seeing through the webcam, and voice ID.
 
 ## Tests
