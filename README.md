@@ -36,8 +36,10 @@ The desk Buddy lives in
 
 ## Setup (Windows)
 
-1. **Python 3.12** (if you don't have it): in PowerShell,
-   `winget install Python.Python.3.12`, then close and reopen PowerShell.
+1. **Python 3.10 to 3.13** (3.12 is best; 3.14 and newer are too new for some
+   of the parts he needs). If you don't have one: in PowerShell,
+   `py install 3.12` (or `winget install Python.Python.3.12`), then close and
+   reopen PowerShell.
 2. **Get the files**: download this repository as a ZIP (green **Code**
    button, **Download ZIP**) and extract it, for example to `C:\BuddyPC`.
 3. **Settings**: copy `buddy.example.ini` to `buddy.ini` and open it in
