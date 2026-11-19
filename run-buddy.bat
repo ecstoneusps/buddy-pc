@@ -16,8 +16,9 @@ if not exist .venv\Scripts\python.exe (
 rem Install (or update) the parts he needs when requirements.txt is new or changed.
 fc /b requirements.txt .venv\installed.txt >nul 2>&1
 if errorlevel 1 (
-  .venv\Scripts\python.exe -m pip install --upgrade pip
-  .venv\Scripts\python.exe -m pip install -r requirements.txt
+  echo Installing what Buddy needs (only after an update)...
+  .venv\Scripts\python.exe -m pip install -q --upgrade pip
+  .venv\Scripts\python.exe -m pip install -q -r requirements.txt
   if errorlevel 1 (
     echo Installing failed: see the messages above.
     pause
