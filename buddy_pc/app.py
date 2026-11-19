@@ -88,6 +88,7 @@ class Buddy:
         self.brain = Brain(cfg, log)
         self.ears = Transcriber(cfg, log)
         self.mic = Mic(cfg["mic"])
+        log(f"microphone: {self.mic.name}")
         self.endpoint = Endpointer()
         self.wake = None
         if cfg["wake_word"].lower() not in ("", "off", "none"):
@@ -139,7 +140,12 @@ class Buddy:
             self.endpoint.start_window = 5.0 if follow_up else 6.0
             pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set)
             if pcm is None or self.cancel.is_set():
-                log("no follow-up" if follow_up else "nothing said", debug=not follow_up)
+                if follow_up:
+                    log("no follow-up")
+                elif not self.cancel.is_set():
+                    log(f"didn't hear anything: loudest {self.endpoint.loudest:.0f} dB, background "
+                        f"{self.endpoint.floor:.0f} dB (speech needs about "
+                        f"{max(self.endpoint.floor + 12, -52):.0f} dB)")
                 return
             self.state = "thinking"
             t0 = time.time()

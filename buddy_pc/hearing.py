@@ -26,6 +26,8 @@ class Mic:
     def __init__(self, device=None):
         import sounddevice as sd
         self.frames = queue.Queue(maxsize=200)
+        info = sd.query_devices(device or None, "input")
+        self.name = info["name"]
         self.stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME,
                                      device=device or None, callback=self._cb)
         self.stream.start()
@@ -54,6 +56,7 @@ class Endpointer:
     def __init__(self, start_window=6.0, end_silence=0.9, max_len=20.0):
         self.start_window, self.end_silence, self.max_len = start_window, end_silence, max_len
         self.floor = -60.0
+        self.loudest = -120.0  # in the last recording, for "I couldn't hear you" messages
 
     def learn(self, frame):
         db = _db(frame)
@@ -69,6 +72,7 @@ class Endpointer:
         didn't say anything (or it was cancelled)."""
         frames = list(preroll)
         heard = False
+        self.loudest = -120.0
         t0 = last = time.time()
         while True:
             if cancelled():
@@ -79,6 +83,7 @@ class Endpointer:
                 continue
             frames.append(f)
             now = time.time()
+            self.loudest = max(self.loudest, _db(f))
             if self.is_speech(f):
                 heard = True
                 last = now

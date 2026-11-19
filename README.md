@@ -54,6 +54,10 @@ The desk Buddy lives in
    wake word models, so give it time. Later starts take a few seconds.
 
 The window shows a sleepy face while he's starting, then his normal face.
+The console shows which microphone he's using. If it's the wrong one (or he
+can't hear you), double-click **list-devices.bat**, find your microphone in the
+list, and put part of its name in `microphone =` in `buddy.ini` (the same for
+`speaker =`).
 The black console window shows what he hears and says.
 
 ## Personality
