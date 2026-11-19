@@ -136,7 +136,10 @@ class SharedNotes:
     def saw(self, text):
         """What he just saw through the webcam, for Buddy's eyes' diary."""
         if self.client:
-            self.client.publish(SAW_TOPIC, text, qos=1)
+            info = self.client.publish(SAW_TOPIC, text, qos=1)
+            self.log(f"(sent to Buddy's eyes: \"{text}\"{'' if info.rc == 0 else f', but MQTT said {info.rc}'})")
+        else:
+            self.log("(not sent to Buddy's eyes: no MQTT connection)")
 
     def close(self):
         """Buddy is quitting: tell the desk Buddy to answer again."""
