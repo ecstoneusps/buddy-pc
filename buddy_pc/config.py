@@ -49,8 +49,12 @@ def load(path=CONFIG_FILE):
         "kokoro_port": int(g("kokoro_port", "10210")),
         "voice": g("voice", "af_heart"),
         "volume": max(0, min(200, int(g("volume", "100")))),
-        # The desk Buddy (shared memory) and Buddy's eyes (shared diary)
-        "desk_buddy_url": _url(g("desk_buddy_url", "")),
+        # Home Assistant's MQTT broker: memory notes shared with the desk Buddy
+        "mqtt_host": g("mqtt_host", ""),
+        "mqtt_port": int(g("mqtt_port", "1883")),
+        "mqtt_user": g("mqtt_user", ""),
+        "mqtt_password": g("mqtt_password", ""),
+        # Buddy's eyes (shared diary)
         "eyes_diary": g("eyes_diary", ""),
         # Window
         "window_width": max(160, int(g("window_width", "320"))),

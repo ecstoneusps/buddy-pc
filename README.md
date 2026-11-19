@@ -46,8 +46,9 @@ The desk Buddy lives in
    Notepad (Windows may hide the `.ini`; it should look like the example's
    name without "example"). Check your name and the voice (the same one the
    desk Buddy uses in Home Assistant), and fill in:
-   - `desk_buddy_url`: the desk Buddy's address, the one his settings page is
-     on (e.g. `http://192.168.4.50`), so both bodies share his memory notes.
+   - `mqtt_host`, `mqtt_user`, `mqtt_password`: Home Assistant's MQTT broker
+     and login, the same as the desk Buddy's and Buddy's eyes', so both bodies
+     share his memory notes.
    - `eyes_diary`: the full path to Buddy's eyes' `diary.json`.
 4. **Start**: double-click **run-buddy.bat**. The first start sets everything
    up (a few minutes) and downloads the Whisper model (about 1.6 GB) and the
@@ -69,11 +70,19 @@ Buddy brain → Configure → Instructions), but keep the line about starting
 each reply with an emotion tag. His memory notes and the diary are added
 automatically, so leave the Home Assistant template lines out.
 
+## Shared memory
+
+Buddy's memory notes ("remember that my dog's name is King") are shared by
+both bodies. The shared copy is a retained message on Home Assistant's MQTT
+broker, so it's there even when the other body is off: the desk Buddy picks up
+changes when he starts, and the PC Buddy keeps a copy in `memories.json` for
+when the broker can't be reached. (Needs desk Buddy firmware from build 90 on.)
+
 ## Coming next
 
 - Coordination with the desk Buddy over MQTT, so only one answers, then a
   trained "Hey Buddy" wake word.
-- "Remember that..." from the PC, saved into the desk Buddy's notes.
+- "Remember that..." from the PC (the shared notes are ready for it).
 - Web search (SearXNG), seeing through the webcam, and voice ID.
 
 ## Tests

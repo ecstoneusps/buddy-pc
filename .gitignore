@@ -4,3 +4,5 @@ __pycache__/
 buddy.ini
 buddy.ini.ini
 buddy.ini.txt
+memories.json
+memories.json.tmp

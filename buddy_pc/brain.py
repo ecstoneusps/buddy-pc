@@ -1,5 +1,5 @@
-"""Thinking: Ollama with Buddy's personality, his memory notes (from the
-desk Buddy) and what Buddy's eyes saw today."""
+"""Thinking: Ollama with Buddy's personality, his memory notes (shared with
+the desk Buddy) and what Buddy's eyes saw today."""
 
 import datetime as dt
 import json
@@ -9,7 +9,8 @@ import time
 
 import requests
 
-from .textutil import notes_block, parse_notes
+from .shared import SharedNotes
+from .textutil import notes_block
 
 DEFAULT_PERSONALITY = """You are Buddy, a small robot puppy and {owner}'s companion. You have two bodies: a little
 robot on {owner}'s desk and this window on their PC; they're both you. You have the quick wit of a
@@ -35,13 +36,8 @@ class Brain:
     def __init__(self, cfg, log):
         self.cfg, self.log = cfg, log
         self.history = []  # (time, role, text)
-        self._notes = []
-        self._notes_at = 0.0
         self._lock = threading.Lock()
-        if cfg["desk_buddy_url"]:
-            self.notes()  # start reading them now, so the first answer has them
-        else:
-            log("not sharing the desk Buddy's memory notes (desk_buddy_url is empty in buddy.ini)")
+        self.shared = SharedNotes(cfg, log, **({"cache_file": cfg["notes_cache"]} if "notes_cache" in cfg else {}))
 
     # -- what goes into the prompt ------------------------------------------
 
@@ -54,26 +50,8 @@ class Brain:
         return text.replace("{owner}", self.cfg["owner"])
 
     def notes(self):
-        """The desk Buddy's memory notes. They're fetched in the background
-        (every 5 minutes), so a desk Buddy that's off or away never holds up
-        an answer."""
-        url = self.cfg["desk_buddy_url"]
-        if url and time.time() - self._notes_at > 300:
-            self._notes_at = time.time()
-            threading.Thread(target=self._fetch_notes, args=(url,), daemon=True).start()
-        return self._notes
-
-    def _fetch_notes(self, url):
-        try:
-            r = requests.get(f"{url}/memories", timeout=5)
-            r.raise_for_status()
-            notes = parse_notes(r.text)
-            if notes != self._notes:
-                self.log(f"read {len(notes)} memory notes from the desk Buddy")
-            self._notes = notes
-        except requests.RequestException as e:
-            self.log(f"couldn't read the desk Buddy's notes at {url} ({type(e).__name__}); "
-                     "is desk_buddy_url his address? Trying again in 5 minutes")
+        """The memory notes shared with the desk Buddy (see shared.py)."""
+        return self.shared.notes()
 
     def diary(self):
         path = self.cfg["eyes_diary"]

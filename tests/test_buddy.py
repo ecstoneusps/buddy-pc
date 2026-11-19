@@ -205,7 +205,7 @@ def test_level_of():
 # Brain: a fake Ollama and a fake desk Buddy
 
 
-def test_brain_streams_and_uses_notes(tmp_path=None):
+def test_brain_streams_and_uses_notes():
     import tempfile
     from buddy_pc.brain import Brain
 
@@ -214,12 +214,6 @@ def test_brain_streams_and_uses_notes(tmp_path=None):
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
-
-        def do_GET(self):  # the desk Buddy's /memories
-            body = b"# notes\nMy dog is King\n"
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(body)
 
         def do_POST(self):  # Ollama's /api/chat
             seen["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -234,13 +228,9 @@ def test_brain_streams_and_uses_notes(tmp_path=None):
     url = f"http://127.0.0.1:{srv.server_address[1]}"
     d = tempfile.mkdtemp()
     cfg = {"owner": "Eric", "ollama": url, "chat_model": "m", "personality_file": os.path.join(d, "none.txt"),
-           "desk_buddy_url": url, "eyes_diary": ""}
+           "eyes_diary": "", "notes_cache": os.path.join(d, "memories.json")}
     b = Brain(cfg, lambda *a, **k: None)
-    b.notes()  # starts fetching the desk Buddy's notes in the background
-    for _ in range(50):
-        if b._notes:
-            break
-        time.sleep(0.05)
+    b.shared.apply(json.dumps({"version": 3, "from": "desk", "notes": "# notes\nMy dog is King\n"}))
     reply = "".join(b.chat("hello"))
     srv.shutdown()
     assert reply == "[happy] Hi Eric!"
@@ -248,6 +238,28 @@ def test_brain_streams_and_uses_notes(tmp_path=None):
     assert "Your owner's dog is King" in system and "Eric's companion" in system
     assert seen["body"]["messages"][-1] == {"role": "user", "content": "hello"}
     assert [h[1] for h in b.history] == ["user", "assistant"]
+
+
+def test_shared_notes_newest_wins_and_survive_a_restart():
+    import tempfile
+    from buddy_pc.shared import SharedNotes
+
+    path = os.path.join(tempfile.mkdtemp(), "memories.json")
+    n = SharedNotes({}, lambda *a, **k: None, cache_file=path)
+    assert n.notes() == []
+    assert n.apply(json.dumps({"version": 2, "from": "desk", "notes": "My dog is King\n"}), "buddy/desk_buddy_x/memories")
+    assert not n.apply(json.dumps({"version": 1, "from": "desk", "notes": "old\n"}))  # older: ignored
+    assert not n.apply("not json")
+    assert n.notes() == ["My dog is King"] and n.topic == "buddy/desk_buddy_x/memories"
+    again = SharedNotes({}, lambda *a, **k: None, cache_file=path)  # the desk Buddy is off: the copy here
+    assert again.notes() == ["My dog is King"] and again.version == 2
+    sent = []
+    again.client = type("C", (), {"publish": lambda self, *a, **k: sent.append((a, k))})()
+    again.topic = "buddy/desk_buddy_x/memories"
+    assert again.share("My dog is King\nI drink chocolate milk\n")
+    (topic, payload), kw = sent[0]
+    assert topic == "buddy/desk_buddy_x/memories" and kw == {"qos": 1, "retain": True}
+    assert json.loads(payload) == {"version": 3, "from": "pc", "notes": "My dog is King\nI drink chocolate milk\n"}
 
 
 # ---------------------------------------------------------------------------
