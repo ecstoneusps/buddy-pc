@@ -104,9 +104,6 @@ when you quit him, or the PC goes to sleep, the desk Buddy answers again
 (within about a minute if the PC just disappears). While the PC Buddy listens
 for "Hey Jarvis", the desk Buddy keeps answering "Hey Buddy".
 
-## Coming next
-
-
 ## Tests
 
 `python tests/test_buddy.py` (no microphone, speakers, GPU, Ollama or Kokoro
