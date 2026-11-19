@@ -54,6 +54,14 @@ def load(path=CONFIG_FILE):
         "mqtt_port": int(g("mqtt_port", "1883")),
         "mqtt_user": g("mqtt_user", ""),
         "mqtt_password": g("mqtt_password", ""),
+        # Tools: web search (SearXNG), weather (Open-Meteo), looking (webcam + vision model)
+        "search_url": _url(g("search_url", "")),
+        "weather_place": g("weather_place", ""),
+        "units": g("units", "us").lower(),
+        "vision_model": g("vision_model", ""),
+        "camera_index": int(g("camera_index", "0")),
+        # Voice ID (tools/voiceid in the desk Buddy's project): who's talking
+        "voice_id_url": _url(g("voice_id_url", "")),
         # Buddy's eyes (shared diary)
         "eyes_diary": g("eyes_diary", ""),
         # Window

@@ -16,6 +16,7 @@ from .textutil import parse_notes
 
 CACHE_FILE = os.path.join(HERE, "memories.json")
 STATUS_TOPIC = "buddy_pc/status"     # online / offline
+SAY_TOPIC = "buddy_pc/say"           # something to say out loud (Buddy's eyes' remarks)
 WAKE_TOPIC = "buddy_pc/wake_word"    # what he listens for
 
 
@@ -24,6 +25,7 @@ class SharedNotes:
         self.cfg, self.log, self.cache_file = cfg, log, cache_file
         self.version, self.text = 0, ""
         self.topic = None  # buddy/<node>/memories, once known
+        self.on_say = None  # called with text to say (from Buddy's eyes)
         self._lock = threading.Lock()
         self._load_cache()
         self.client = None
@@ -90,7 +92,7 @@ class SharedNotes:
         # word first. If he stops without saying so, the broker says it for him.
         c.will_set(STATUS_TOPIC, "offline", qos=1, retain=True)
         c.on_connect = self._on_connect
-        c.on_message = lambda client, userdata, msg: self.apply(msg.payload.decode("utf-8", "replace"), msg.topic)
+        c.on_message = self._on_message
         c.reconnect_delay_set(2, 60)
         c.connect_async(self.cfg["mqtt_host"], self.cfg.get("mqtt_port", 1883), 30)
         c.loop_start()
@@ -101,12 +103,21 @@ class SharedNotes:
             self.log(f"MQTT login refused ({reason_code}): check mqtt_user / mqtt_password in buddy.ini")
             return
         client.subscribe("buddy/+/memories", qos=1)
+        client.subscribe(SAY_TOPIC, qos=1)
         wake = self.cfg.get("wake_word") or "off"
         client.publish(WAKE_TOPIC, wake, qos=1, retain=True)
         client.publish(STATUS_TOPIC, "online", qos=1, retain=True)
         self.log("connected to MQTT (shared memory notes; "
                  + ("the desk Buddy lets me answer \"Hey Buddy\")" if "buddy" in wake.lower()
                     else "the desk Buddy keeps answering \"Hey Buddy\" until I listen for it too)"))
+
+    def _on_message(self, client, userdata, msg):
+        text = msg.payload.decode("utf-8", "replace")
+        if msg.topic == SAY_TOPIC:
+            if text.strip() and self.on_say:
+                self.on_say(text.strip())
+            return
+        self.apply(text, msg.topic)
 
     def share(self, text):
         """Saves a change made here as the newest shared version."""

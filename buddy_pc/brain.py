@@ -9,6 +9,7 @@ import time
 
 import requests
 
+from . import tools
 from .shared import SharedNotes
 from .textutil import notes_block
 
@@ -24,12 +25,23 @@ Start every reply with one emotion tag in square brackets that fits it: [happy],
 
 HISTORY_MINUTES = 5
 
-# Until he has tools on the PC: say so instead of inventing a forecast.
-LIMITS = ("[In this PC body you can't look anything up yet: no weather, news, sports scores, prices or "
-          "anything else live. If asked, say playfully that you can't check from here (your desk body can), "
-          "and never make up a forecast, score or fact. Don't invent things about your owner's life, habits or "
-          "home either (what they drink or eat, spills, messes, what they always do): only use what they tell "
-          "you or what's in your notes. Vary your jokes; don't keep coming back to the same running gag.]\n")
+# Honest about what he can and can't check (and no made-up details).
+def limits(cfg):
+    can = [what for key, what in (("search_url", "search the web"), ("weather_place", "check the weather"),
+                                  ("vision_model", "look through your camera")) if cfg.get(key)]
+    lines = []
+    if can:
+        lines.append("You can " + ", ".join(can) + " with your tools: use them whenever a question needs it, "
+                     "instead of guessing.")
+    missing = [what for key, what in (("search_url", "news, sports scores and prices"),
+                                      ("weather_place", "the weather")) if not cfg.get(key)]
+    if missing:
+        lines.append("You can't check " + " or ".join(missing) + " from this body: if asked, say so playfully "
+                     "and never make it up.")
+    lines.append("Don't invent things about your owner's life, habits or home (what they drink or eat, spills, "
+                 "messes, what they always do): only use what they tell you or what's in your notes. Vary your "
+                 "jokes; don't keep coming back to the same running gag.")
+    return "[" + " ".join(lines) + "]\n"
 
 
 class Brain:
@@ -75,7 +87,7 @@ class Brain:
         now = dt.datetime.now()
         return (self.personality() + "\n\n"
                 + f"[It's {now.strftime('%A, %B %d, %Y')}, {now.strftime('%I:%M %p').lstrip('0')}.]\n"
-                + LIMITS
+                + limits(self.cfg)
                 + notes_block(self.notes()) + self.diary())
 
     # -- talking --------------------------------------------------------------
@@ -86,29 +98,55 @@ class Brain:
         return [{"role": r, "content": t} for _, r, t in self.history]
 
     def chat(self, heard, extra=""):
-        """Yields the reply as it's written (pieces of text)."""
+        """Yields the reply as it's written (pieces of text). If the AI asks to
+        search, check the weather or look, that's done and it carries on."""
         with self._lock:
             messages = [{"role": "system", "content": self.system_prompt()}] + self._recent()
             messages.append({"role": "user", "content": (extra + heard) if extra else heard})
-            body = {"model": self.cfg["chat_model"], "messages": messages, "stream": True, "keep_alive": "30m",
-                    "options": {"temperature": 0.8}}
-            if "instruct" not in self.cfg["chat_model"]:
-                # Models like qwen3:8b think out loud first unless told not to:
-                # that's slow, and he'd wait for it before saying anything.
-                body["think"] = False
+            defs = tools.definitions(self.cfg)
             reply = []
-            with requests.post(f"{self.cfg['ollama']}/api/chat", json=body, stream=True, timeout=120) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if not line:
-                        continue
-                    msg = json.loads(line)
-                    piece = msg.get("message", {}).get("content", "")
-                    if piece:
-                        reply.append(piece)
-                        yield piece
-                    if msg.get("done"):
-                        break
+            for _ in range(3):  # at most a couple of tool rounds
+                body = {"model": self.cfg["chat_model"], "messages": messages, "stream": True, "keep_alive": "30m",
+                        "options": {"temperature": 0.8}}
+                if defs:
+                    body["tools"] = defs
+                if "instruct" not in self.cfg["chat_model"]:
+                    # Models like qwen3:8b think out loud first unless told not to:
+                    # that's slow, and he'd wait for it before saying anything.
+                    body["think"] = False
+                calls, said = [], []
+                with requests.post(f"{self.cfg['ollama']}/api/chat", json=body, stream=True, timeout=120) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines():
+                        if not line:
+                            continue
+                        msg = json.loads(line)
+                        m = msg.get("message", {})
+                        piece = m.get("content", "")
+                        if piece:
+                            said.append(piece)
+                            reply.append(piece)
+                            yield piece
+                        calls.extend(m.get("tool_calls") or [])
+                        if msg.get("done"):
+                            break
+                if not calls:
+                    break
+                messages.append({"role": "assistant", "content": "".join(said), "tool_calls": calls})
+                for c in calls:
+                    fn = c.get("function", {})
+                    name, args = fn.get("name", ""), fn.get("arguments") or {}
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except ValueError:
+                            args = {}
+                    self.log(f"-> {name}({', '.join(f'{k}={v!r}' for k, v in args.items())})")
+                    messages.append({"role": "tool", "content": tools.run(self.cfg, name, args, self.log),
+                                     "tool_name": name})
+                if reply and not reply[-1].endswith((" ", "\n")):
+                    reply.append(" ")
+                    yield " "
             now = time.time()
             self.history.append((now, "user", heard))
             self.history.append((now, "assistant", "".join(reply)))

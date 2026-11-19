@@ -9,7 +9,7 @@ import time
 import traceback
 
 from . import config as config_mod
-from . import memory
+from . import memory, voiceid
 from .face import Face, expression_for
 from .hearing import loudest_db, strip_phrase
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
@@ -40,6 +40,7 @@ class Buddy:
         self.state = "starting"       # starting, idle, listening, thinking, speaking
         self.reply_expr = "happy"
         self.linger_until = 0.0       # keep the reply's face a moment after talking
+        self.remarks = queue.Queue()     # things to say on his own (Buddy's eyes)
         self.click = threading.Event()   # a click on the face: start listening
         self.cancel = threading.Event()  # a click while busy: stop
         self.speaker = None
@@ -97,6 +98,7 @@ class Buddy:
         cfg = self.cfg
         self.speaker = Speaker(cfg, log)
         self.brain = Brain(cfg, log)
+        self.brain.shared.on_say = lambda text: self.remarks.put((time.time(), text))
         self.ears = Transcriber(cfg, log)
         self.mic = Mic(cfg["mic"])
         log(f"microphone: {self.mic.name}")
@@ -139,6 +141,8 @@ class Buddy:
             if self.click.is_set():
                 log("click: listening")
                 return None
+            if self._say_remark():
+                continue
             try:
                 frame = self.mic.read(timeout=0.2)
             except queue.Empty:
@@ -149,6 +153,22 @@ class Buddy:
             if self.wake and self.wake.heard(frame):
                 log("wake word: listening")
                 return None
+
+    def _say_remark(self):
+        """Says something Buddy's eyes sent (a remark or a thought of his own), if
+        there is one. True if he said something."""
+        try:
+            at, text = self.remarks.get_nowait()
+        except queue.Empty:
+            return False
+        if time.time() - at > 180:  # waited through a long conversation: stale now
+            return True
+        log(f"Buddy's eyes: \"{text}\"")
+        self._answer("", iter([text]))
+        self.brain.history.append((time.time(), "assistant", split_reply(text)[1]))
+        self.state = "idle"
+        self.mic.drain()
+        return True
 
     def _idle_phrase(self):
         """Wake word by phrase: each time someone starts talking, the tiny
@@ -162,6 +182,9 @@ class Buddy:
             if self.click.is_set():
                 log("click: listening")
                 return None
+            if self._say_remark():
+                seg = []  # what was being heard is from before he talked
+                continue
             try:
                 frame = self.mic.read(timeout=0.2)
             except queue.Empty:
@@ -227,6 +250,11 @@ class Buddy:
                         f"{max(self.endpoint.floor + 12, -52):.0f} dB)")
                 return
             self.state = "thinking"
+            # Who's talking, at the same time as working out what they said.
+            who = [None]
+            vid = threading.Thread(target=lambda: who.__setitem__(0, voiceid.identify(self.cfg, pcm, log)),
+                                   daemon=True)
+            vid.start()
             t0 = time.time()
             phrase = getattr(self.wake, "phrase", None)
             heard = self.ears.text(pcm, hotwords=phrase.title() if phrase else None, strict=follow_up)
@@ -252,11 +280,12 @@ class Buddy:
                 return
             last_heard = heard
             your_level = loudest_db(pcm)
+            vid.join(3)
             kind, fact = memory.parse_command(heard)
             if kind:
                 spoken, cancelled = self._answer(heard, iter([self._memory(kind, fact)]))
             else:
-                spoken, cancelled = self._answer(heard)
+                spoken, cancelled = self._answer(heard, extra=voiceid.LINES.get(who[0], ""))
             if cancelled or not self.cfg["follow_up"]:
                 return
             if is_clarify(spoken):
@@ -287,13 +316,13 @@ class Buddy:
                 log(f"-> notes: {len(new)} (kept on the PC; shared once the MQTT broker can be reached)")
         return reply
 
-    def _answer(self, heard, pieces=None):
+    def _answer(self, heard, pieces=None, extra=""):
         """Streams the AI's answer (or `pieces`, a reply of our own), speaking
         each sentence as soon as it's complete. Returns (what was said, cancelled)."""
         text, used, started = "", 0, False
         t0 = time.time()
         try:
-            for piece in (pieces if pieces is not None else self.brain.chat(heard)):
+            for piece in (pieces if pieces is not None else self.brain.chat(heard, extra=extra)):
                 if self.cancel.is_set():
                     break
                 text += piece

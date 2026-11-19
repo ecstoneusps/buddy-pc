@@ -28,6 +28,13 @@ The desk Buddy lives in
   **"forget that"** (the last note), **"forget about ..."** and **"forget
   everything"** (a backup is kept in `memories-backup.txt`) work like on the
   desk Buddy, on the notes both bodies share.
+- He can **search the web** (your SearXNG), **check the weather** (Open-Meteo,
+  for `weather_place`) and **look through the webcam** ("what am I holding?",
+  "how many fingers?") on his own when a question needs it.
+- While he's running, **Buddy's eyes' remarks** and thoughts come from him
+  instead of the desk Buddy (he says them when he isn't in a conversation).
+- With **voice ID** (`voice_id_url`, the desk Buddy's service), he knows
+  whether it's you or a guest talking (the console shows `voice: owner (score ...)`).
 - Right-click his face for **Always on top** and **Quit**.
 
 ## What runs where (all on this PC)
@@ -58,6 +65,11 @@ The desk Buddy lives in
 4. **Start**: double-click **run-buddy.bat**. The first start sets everything
    up (a few minutes) and downloads the Whisper model (about 1.6 GB) and the
    wake word models, so give it time. Later starts take a few seconds.
+
+5. **Start with Windows** (optional): double-click **start-with-windows.bat**
+   once. He then starts (minimized) whenever you log in;
+   **remove-from-startup.bat** undoes it. If Ollama or Kokoro start a little
+   later than him, his first answer may take a moment; he keeps trying.
 
 The window shows a sleepy face while he's starting, then his normal face.
 The console shows which microphone he's using. If it's the wrong one (or he
@@ -94,7 +106,6 @@ for "Hey Jarvis", the desk Buddy keeps answering "Hey Buddy".
 
 ## Coming next
 
-- Web search (SearXNG), seeing through the webcam, and voice ID.
 
 ## Tests
 

@@ -260,6 +260,113 @@ def test_brain_streams_and_uses_notes():
     assert [h[1] for h in b.history] == ["user", "assistant"]
 
 
+def test_brain_uses_web_search_then_answers():
+    import tempfile
+    from buddy_pc.brain import Brain
+
+    seen = {"chats": []}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):  # SearXNG
+            seen["search"] = self.path
+            body = json.dumps({"results": [{"title": "Hot dog contest", "content": "Joey Chestnut won with 70.",
+                                            "url": "https://example.com"}]}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):  # Ollama
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen["chats"].append(body)
+            self.send_response(200)
+            self.end_headers()
+            if len(seen["chats"]) == 1:
+                call = {"function": {"name": "web_search", "arguments": {"query": "hot dog contest winner"}}}
+                lines = [{"message": {"content": "[thinking] Let me look.", "tool_calls": [call]}, "done": True}]
+            else:
+                lines = [{"message": {"content": "[happy] Joey Chestnut, with 70!"}, "done": True}]
+            for l in lines:
+                self.wfile.write(json.dumps(l).encode() + b"\n")
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    d = tempfile.mkdtemp()
+    cfg = {"owner": "Eric", "ollama": url, "chat_model": "m", "personality_file": os.path.join(d, "x"),
+           "eyes_diary": "", "notes_cache": os.path.join(d, "m.json"), "search_url": url}
+    b = Brain(cfg, lambda *a, **k: None)
+    reply = "".join(b.chat("who won the hot dog contest?"))
+    srv.shutdown()
+    assert reply == "[thinking] Let me look. [happy] Joey Chestnut, with 70!"
+    assert "q=hot+dog+contest+winner" in seen["search"]
+    first, second = seen["chats"]
+    assert [t["function"]["name"] for t in first["tools"]] == ["web_search"]
+    assert "You can search the web" in first["messages"][0]["content"]
+    assert second["messages"][-1]["role"] == "tool" and "Joey Chestnut won" in second["messages"][-1]["content"]
+
+
+def test_weather_text():
+    from unittest import mock
+    from buddy_pc import tools
+
+    class R:
+        def __init__(self, d):
+            self.d = d
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.d
+
+    geo = {"results": [{"latitude": 1, "longitude": 2, "name": "Springfield", "admin1": "Illinois", "country": "US"},
+                       {"latitude": 3, "longitude": 4, "name": "Springfield", "admin1": "Ohio", "country": "US"}]}
+    fc = {"current": {"temperature_2m": 41.2, "apparent_temperature": 35.0, "weather_code": 3,
+                      "wind_speed_10m": 9.6, "precipitation": 0},
+          "daily": {"time": ["2026-11-19", "2026-11-20", "2026-11-21"], "temperature_2m_max": [45, 50, 38],
+                    "temperature_2m_min": [30, 33, 25], "precipitation_probability_max": [10, 60, None],
+                    "weather_code": [3, 61, 71]}}
+    calls = []
+
+    def get(url, params=None, timeout=None):
+        calls.append(params)
+        return R(geo if "geocoding" in url else fc)
+
+    with mock.patch.object(tools.requests, "get", get):
+        text = tools.weather({"weather_place": "Springfield, Ohio"})
+    assert calls[1]["latitude"] == 3  # the Ohio one
+    assert text.startswith("Weather in Springfield now: overcast, 41°F (feels like 35°F), wind 10 mph.")
+    assert "Tomorrow: light rain, high 50°F, low 33°F, 60% chance" in text and "Saturday: light snow" in text
+
+
+def test_voice_id():
+    from buddy_pc import voiceid
+    got = {}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            got["len"] = int(self.headers["Content-Length"])
+            body = json.dumps({"decision": "owner", "score": 0.52, "enrolled": True, "seconds": 2.0}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    cfg = {"voice_id_url": f"http://127.0.0.1:{srv.server_address[1]}"}
+    quiet = lambda *a, **k: None
+    assert voiceid.identify(cfg, np.zeros(32000, np.int16), quiet) == "owner" and got["len"] == 64000
+    assert voiceid.identify(cfg, np.zeros(8000, np.int16), quiet) is None  # too short to tell
+    srv.shutdown()
+    assert voiceid.identify({"voice_id_url": ""}, np.zeros(32000, np.int16), quiet) is None
+
+
 def test_shared_notes_newest_wins_and_survive_a_restart():
     import tempfile
     from buddy_pc.shared import SharedNotes
@@ -308,7 +415,7 @@ def _fake_buddy(replies, heard):
 
     b = Buddy.__new__(Buddy)
     b.echo_wait = 0
-    b.cfg = {"follow_up": True}
+    b.cfg = {"follow_up": True, "voice_id_url": ""}
     b.state, b.reply_expr, b.linger_until = "idle", "happy", 0.0
     b.click, b.cancel = threading.Event(), threading.Event()
     b.speaker = FakeSpeaker()
@@ -318,7 +425,7 @@ def _fake_buddy(replies, heard):
                                 np.zeros(16000, np.int16) if heard else None})()
     b.ears = type("W", (), {"text": lambda self, pcm, hotwords=None, strict=False: heard.pop(0)})()
     replies = list(replies)
-    b.brain = type("B", (), {"chat": lambda self, h: iter(replies.pop(0))})()
+    b.brain = type("B", (), {"chat": lambda self, h, extra="": iter(replies.pop(0))})()
     return b
 
 
