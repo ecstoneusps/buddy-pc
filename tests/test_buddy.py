@@ -306,7 +306,7 @@ def _fake_buddy(replies, heard):
     b.speaker = FakeSpeaker()
     b.mic = type("M", (), {"drain": lambda self: None})()
     heard = list(heard)
-    b.endpoint = type("E", (), {"start_window": 6, "hit_limit": False, "record": lambda self, mic, cancelled=None, ignore_first=0:
+    b.endpoint = type("E", (), {"start_window": 6, "hit_limit": False, "loudest": -30.0, "record": lambda self, mic, cancelled=None, ignore_first=0:
                                 np.zeros(16000, np.int16) if heard else None})()
     b.ears = type("W", (), {"text": lambda self, pcm, hotwords=None, strict=False: heard.pop(0)})()
     replies = list(replies)
