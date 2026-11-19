@@ -167,6 +167,8 @@ def look(cfg, question, log):
               "from what you can clearly see; if you can't tell, say so. To count fingers, count each raised "
               "finger one by one.")
     body = {"model": cfg["vision_model"], "stream": False, "keep_alive": "10m",
+            # A short, steady answer: no rambling or getting stuck repeating itself.
+            "options": {"temperature": 0.2, "repeat_penalty": 1.15, "num_predict": 150},
             "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(jpg).decode()]}]}
     for attempt in (1, 2):
         r = requests.post(f"{cfg['ollama']}/api/chat", json=body, timeout=120)
