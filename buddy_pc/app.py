@@ -282,6 +282,9 @@ class Buddy:
             last_heard = heard
             your_level = loudest_db(pcm)
             vid.join(3)
+            if self.cfg.get("voice_id_url") and voiceid.is_enroll_request(heard):
+                self._learn_voice(who[0])
+                return
             kind, fact = memory.parse_command(heard)
             if kind:
                 spoken, cancelled = self._answer(heard, iter([self._memory(kind, fact)]))
@@ -298,6 +301,59 @@ class Buddy:
                 return
             time.sleep(self.echo_wait)  # let his own voice die away
             follow_up = True
+
+    def _say(self, text):
+        """Says something of his own (not from the AI) and waits until he's done."""
+        self._answer("", iter([text]))
+        time.sleep(self.echo_wait)
+
+    def _learn_voice(self, who):
+        """'Learn my voice': three samples through this microphone, added to the
+        voiceprint the desk Buddy made (so he knows you through both)."""
+        if who == "other":
+            self._say("[thinking] Hmm, only my owner can teach me their voice. If that's you, try again somewhere "
+                      "quiet!")
+            return
+        prompts = ["[happy] Okay! I'll listen to you three times through this microphone. First, tell me a little "
+                   "about yourself, a few sentences.",
+                   "[happy] Got it! Two more. Now tell me about your favorite food.",
+                   "[happy] Great! Last one: tell me what you did today."]
+        ep = self.endpoint
+        saved = (ep.start_window, ep.end_silence)
+        try:
+            ep.start_window, ep.end_silence = 10.0, 2.0  # time to think, and pauses don't end it
+            done = 0
+            tries = 0
+            say = prompts[0]
+            while done < 3:
+                self._say(say)
+                self.state = "listening"
+                self.mic.drain()
+                pcm = ep.record(self.mic, cancelled=self.cancel.is_set, ignore_first=0.8)
+                if self.cancel.is_set():
+                    return
+                tries += 1
+                if pcm is None or len(pcm) < 16000 * 2.5:
+                    if tries >= 3:
+                        self._say("[sad] I couldn't hear you well enough. Say \"learn my voice\" when you want to "
+                                  "try again.")
+                        return
+                    say = ("[thinking] I didn't catch that. " if pcm is None else
+                           "[thinking] That was a bit short. ") + prompts[done].split("] ", 1)[1]
+                    continue
+                self.state = "thinking"
+                n = voiceid.enroll(self.cfg, pcm)
+                if n is None:
+                    self._say("[confused] Hmm, I couldn't reach my voice helper. Is it running?")
+                    return
+                done += 1
+                tries = 0
+                log(f"voice ID: sample {done} of 3 recorded ({len(pcm) / 16000:.1f} s; {n} samples in all)")
+                if done < 3:
+                    say = prompts[done]
+            self._say("[laughing] All done! Now I know your voice through this microphone too.")
+        finally:
+            ep.start_window, ep.end_silence = saved
 
     def _memory(self, kind, fact):
         """'Remember that...' / 'forget...': changes the shared notes. Returns what to say."""

@@ -35,6 +35,8 @@ The desk Buddy lives in
   instead of the desk Buddy (he says them when he isn't in a conversation).
 - With **voice ID** (`voice_id_url`, the desk Buddy's service), he knows
   whether it's you or a guest talking (the console shows `voice: owner (score ...)`).
+  Say **"learn my voice"** to add three samples through the PC's microphone to
+  the voiceprint the desk Buddy made, so he knows you through both microphones.
 - Right-click his face for **Always on top** and **Quit**.
 
 ## What runs where (all on this PC)

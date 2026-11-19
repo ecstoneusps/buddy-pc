@@ -499,6 +499,35 @@ def test_conversation_with_the_question_said_with_the_wake_word():
     assert b.speaker.said == ["It's noon."]
 
 
+def test_learn_my_voice_on_the_pc():
+    from unittest import mock
+    from buddy_pc import voiceid
+    assert voiceid.is_enroll_request("Hey Buddy, learn my voice.")
+    assert voiceid.is_enroll_request("Can you remember my voice?")
+    b = _fake_buddy([], ["learn my voice"])
+    b.cfg["voice_id_url"] = "http://x"
+    samples = [None, np.zeros(16000, np.int16), np.zeros(16000 * 4, np.int16), np.zeros(16000 * 5, np.int16),
+               np.zeros(16000 * 6, np.int16)]
+    first = [True]
+
+    def record(mic, cancelled=None, ignore_first=0, min_db=-120.0):
+        if first[0]:
+            first[0] = False
+            return np.zeros(16000, np.int16)  # "learn my voice" itself
+        return samples.pop(0)
+
+    b.endpoint.record = record
+    b.endpoint.end_silence = 0.9
+    sent = []
+    with mock.patch.object(voiceid, "enroll", lambda cfg, pcm: sent.append(len(pcm)) or len(sent) + 3), \
+            mock.patch.object(voiceid, "identify", lambda *a: "unsure"):
+        b._conversation()
+    assert sent == [16000 * 4, 16000 * 5, 16000 * 6]
+    said = " ".join(b.speaker.said)
+    assert "I didn't catch that" in said and "That was a bit short" in said and "All done!" in said
+    assert b.endpoint.end_silence == 0.9  # put back
+
+
 def test_conversation_cancel_and_clarify_end_it():
     b = _fake_buddy([], ["never mind"])
     b._conversation()

@@ -28,3 +28,25 @@ def identify(cfg, pcm, log):
         return None
     log(f"voice: {d.get('decision')} (score {d.get('score', 0):.2f}, {d.get('seconds', 0):.1f} s)")
     return d.get("decision")
+
+
+_ENROLL = (" learn my voice ", " remember my voice ", " learn what i sound like ", " learn how i sound ",
+           " recognize my voice ", " recognise my voice ", " get to know my voice ")
+
+
+def is_enroll_request(heard):
+    from .textutil import normalize
+    h = " " + normalize(heard) + " "
+    return any(p in h for p in _ENROLL)
+
+
+def enroll(cfg, pcm):
+    """Adds a sample of the owner's voice (through this microphone) to the
+    voiceprint. Returns how many samples it has, or None if it failed."""
+    try:
+        r = requests.post(f"{cfg['voice_id_url']}/enroll", data=pcm.astype("<i2").tobytes(),
+                          headers={"Content-Type": "application/octet-stream"}, timeout=15)
+        r.raise_for_status()
+        return r.json().get("samples")
+    except (requests.RequestException, ValueError):
+        return None
