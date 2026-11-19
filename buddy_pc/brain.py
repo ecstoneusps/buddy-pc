@@ -40,6 +40,9 @@ def limits(cfg):
     if missing:
         lines.append("You can't check " + " or ".join(missing) + " from this body: if asked, say so playfully "
                      "and never make it up.")
+    lines.append(f"Unless you're told someone else is speaking, the person talking to you is your owner, "
+                 f"{cfg.get('owner', 'your owner')}: talk to them as \"you\" (or by name), never about them as "
+                 "\"my owner\" as if they weren't there.")
     lines.append("Don't invent things about your owner's life, habits or home (what they drink or eat, spills, "
                  "messes, what they always do): only use what they tell you or what's in your notes. Vary your "
                  "jokes; don't keep coming back to the same running gag.")
