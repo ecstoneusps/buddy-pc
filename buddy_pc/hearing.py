@@ -159,7 +159,16 @@ class WakeWord:
         import openwakeword.utils
         from openwakeword.model import Model
         if model.lower().endswith((".onnx", ".tflite")):
-            paths = [model]
+            # A trained model file (e.g. hey_buddy.onnx), next to run-buddy.bat
+            # unless a full path is given. It still needs the shared feature models.
+            from .config import HERE
+            path = model if os.path.isabs(model) else os.path.join(HERE, model)
+            if not os.path.isfile(path):
+                raise FileNotFoundError(f"{path} isn't there")
+            if path.lower().endswith(".tflite"):
+                raise ValueError("use the .onnx version of the model (the .tflite one needs Linux)")
+            openwakeword.utils.download_models(["silero_vad"])
+            paths = [path]
         else:
             openwakeword.utils.download_models([model])
             paths = [model]
