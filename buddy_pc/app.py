@@ -9,6 +9,7 @@ import time
 import traceback
 
 from . import config as config_mod
+from . import memory
 from .face import Face, expression_for
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
@@ -165,7 +166,11 @@ class Buddy:
                 log("-> heard the same thing again; that's an echo, not you")
                 return
             last_heard = heard
-            spoken, cancelled = self._answer(heard)
+            kind, fact = memory.parse_command(heard)
+            if kind:
+                spoken, cancelled = self._answer(heard, iter([self._memory(kind, fact)]))
+            else:
+                spoken, cancelled = self._answer(heard)
             if cancelled or not self.cfg["follow_up"]:
                 return
             if is_clarify(spoken):
@@ -174,13 +179,31 @@ class Buddy:
             time.sleep(self.echo_wait)  # let his own voice die away
             follow_up = True
 
-    def _answer(self, heard):
-        """Streams the AI's answer, speaking each sentence as soon as it's
-        complete. Returns (what was said, cancelled)."""
+    def _memory(self, kind, fact):
+        """'Remember that...' / 'forget...': changes the shared notes. Returns what to say."""
+        shared = self.brain.shared
+        notes = shared.notes()
+        new, reply, changed = memory.apply(kind, fact, notes)
+        if changed:
+            if kind == "forget_all":
+                try:
+                    with open(os.path.join(config_mod.HERE, "memories-backup.txt"), "w", encoding="utf-8") as f:
+                        f.write(memory.to_text(notes))
+                except OSError as e:
+                    log(f"couldn't save memories-backup.txt: {e}")
+            if shared.share(memory.to_text(new)):
+                log(f"-> notes: {len(new)} (shared as version {shared.version})")
+            else:
+                log(f"-> notes: {len(new)} (kept on the PC; shared once the MQTT broker can be reached)")
+        return reply
+
+    def _answer(self, heard, pieces=None):
+        """Streams the AI's answer (or `pieces`, a reply of our own), speaking
+        each sentence as soon as it's complete. Returns (what was said, cancelled)."""
         text, used, started = "", 0, False
         t0 = time.time()
         try:
-            for piece in self.brain.chat(heard):
+            for piece in (pieces if pieces is not None else self.brain.chat(heard)):
                 if self.cancel.is_set():
                     break
                 text += piece

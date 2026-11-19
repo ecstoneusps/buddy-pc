@@ -316,6 +316,40 @@ def test_conversation_stops_on_a_repeated_echo():
     assert b.speaker.said == ["You're welcome!"]
 
 
+def test_memory_commands():
+    from buddy_pc import memory as M
+    assert M.parse_command("Hey Jarvis, remember that my daughter's name is Corey.") == \
+        ("remember", "my daughter's name is Corey")
+    assert M.parse_command("Remember to buy milk") == (None, "")      # a reminder, not a note
+    assert M.parse_command("Do you remember my dog?") == (None, "")   # a question: the AI
+    assert M.parse_command("Forget that.") == ("forget_last", "")
+    assert M.parse_command("forget about the dentist") == ("forget", "the dentist")
+    assert M.to_second_person("I am tired and my dog likes me") == "you are tired and your dog likes you"
+    notes, said, changed = M.apply("remember", "my daughter's name is Corey", ["My dog is King"])
+    assert changed and notes[-1] == "my daughter's name is Corey"
+    assert said == "[happy] Got it! I'll remember that your daughter's name is Corey."
+    notes, said, changed = M.apply("remember", "My daughter's name is Corey!", notes)
+    assert not changed and said.startswith("[winking]")
+    notes, said, changed = M.apply("forget", "dog", notes)
+    assert changed and notes == ["my daughter's name is Corey"]
+    assert M.apply("forget", "cat", notes)[2] is False
+
+
+def test_conversation_remember_goes_to_the_shared_notes():
+    import tempfile
+    from buddy_pc.shared import SharedNotes
+    b = _fake_buddy([], ["remember that I drink chocolate milk"])
+    shared = SharedNotes({}, lambda *a, **k: None, cache_file=os.path.join(tempfile.mkdtemp(), "m.json"))
+    shared.apply(json.dumps({"version": 4, "from": "desk", "notes": "My dog is King\n"}), "buddy/x/memories")
+    sent = []
+    shared.client = type("C", (), {"publish": lambda self, *a, **k: sent.append(a)})()
+    b.brain.shared = shared
+    b._conversation()
+    assert b.speaker.said == ["Got it!", "I'll remember that you drink chocolate milk."]
+    assert shared.notes() == ["My dog is King", "I drink chocolate milk"] and shared.version == 5
+    assert json.loads(sent[0][1])["version"] == 5
+
+
 def test_conversation_cancel_and_clarify_end_it():
     b = _fake_buddy([], ["never mind"])
     b._conversation()

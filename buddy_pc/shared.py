@@ -63,6 +63,12 @@ class SharedNotes:
         with self._lock:
             if topic:
                 self.topic = topic
+            if version < self.version and self.client and self.topic:
+                # Changed here while the broker was out of reach: ours is newer.
+                payload = json.dumps({"version": self.version, "from": "pc", "notes": self.text})
+                self.client.publish(self.topic, payload, qos=1, retain=True)
+                self.log(f"shared the memory notes changed on the PC (version {self.version})")
+                return False
             if version <= self.version:
                 return False
             self.version, self.text = version, text

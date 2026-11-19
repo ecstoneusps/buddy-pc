@@ -23,6 +23,10 @@ The desk Buddy lives in
   yourself (a video he misheard, say).
 - **Click his face** while he's listening, thinking or talking to cancel. Saying
   "cancel", "never mind" or "I wasn't talking to you" works too.
+- **"Remember that..."** ("remember that my daughter's name is Corey"),
+  **"forget that"** (the last note), **"forget about ..."** and **"forget
+  everything"** (a backup is kept in `memories-backup.txt`) work like on the
+  desk Buddy, on the notes both bodies share.
 - Right-click his face for **Always on top** and **Quit**.
 
 ## What runs where (all on this PC)
@@ -82,7 +86,6 @@ when the broker can't be reached. (Needs desk Buddy firmware from build 90 on.)
 
 - Coordination with the desk Buddy over MQTT, so only one answers, then a
   trained "Hey Buddy" wake word.
-- "Remember that..." from the PC (the shared notes are ready for it).
 - Web search (SearXNG), seeing through the webcam, and voice ID.
 
 ## Tests
