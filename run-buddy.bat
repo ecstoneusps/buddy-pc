@@ -26,6 +26,7 @@ if errorlevel 1 (
   copy /y requirements.txt .venv\installed.txt >nul
 )
 set HF_HUB_DISABLE_SYMLINKS_WARNING=1
+set HF_HUB_VERBOSITY=error
 set PYTHONWARNINGS=ignore::UserWarning
 .venv\Scripts\python.exe -m buddy_pc
 pause
