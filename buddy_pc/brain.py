@@ -38,6 +38,10 @@ class Brain:
         self._notes = []
         self._notes_at = 0.0
         self._lock = threading.Lock()
+        if cfg["desk_buddy_url"]:
+            self.notes()  # start reading them now, so the first answer has them
+        else:
+            log("not sharing the desk Buddy's memory notes (desk_buddy_url is empty in buddy.ini)")
 
     # -- what goes into the prompt ------------------------------------------
 
@@ -63,10 +67,10 @@ class Brain:
         try:
             r = requests.get(f"{url}/memories", timeout=5)
             r.raise_for_status()
-            first = not self._notes
-            self._notes = parse_notes(r.text)
-            if first:
-                self.log(f"read {len(self._notes)} memory notes from the desk Buddy")
+            notes = parse_notes(r.text)
+            if notes != self._notes:
+                self.log(f"read {len(notes)} memory notes from the desk Buddy")
+            self._notes = notes
         except requests.RequestException as e:
             self.log(f"couldn't read the desk Buddy's notes at {url} ({type(e).__name__}); "
                      "is desk_buddy_url his address? Trying again in 5 minutes")
@@ -110,6 +114,10 @@ class Brain:
             messages.append({"role": "user", "content": (extra + heard) if extra else heard})
             body = {"model": self.cfg["chat_model"], "messages": messages, "stream": True, "keep_alive": "30m",
                     "options": {"temperature": 0.8}}
+            if "instruct" not in self.cfg["chat_model"]:
+                # Models like qwen3:8b think out loud first unless told not to:
+                # that's slow, and he'd wait for it before saying anything.
+                body["think"] = False
             reply = []
             with requests.post(f"{self.cfg['ollama']}/api/chat", json=body, stream=True, timeout=120) as r:
                 r.raise_for_status()
