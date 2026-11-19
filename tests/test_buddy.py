@@ -236,6 +236,11 @@ def test_brain_streams_and_uses_notes(tmp_path=None):
     cfg = {"owner": "Eric", "ollama": url, "chat_model": "m", "personality_file": os.path.join(d, "none.txt"),
            "desk_buddy_url": url, "eyes_diary": ""}
     b = Brain(cfg, lambda *a, **k: None)
+    b.notes()  # starts fetching the desk Buddy's notes in the background
+    for _ in range(50):
+        if b._notes:
+            break
+        time.sleep(0.05)
     reply = "".join(b.chat("hello"))
     srv.shutdown()
     assert reply == "[happy] Hi Eric!"

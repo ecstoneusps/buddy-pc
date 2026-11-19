@@ -178,7 +178,9 @@ class Transcriber:
         for device, compute, name in tries:
             try:
                 t0 = time.time()
-                m = WhisperModel(name, device=device, compute_type=compute)
+                # On the processor, half the cores (the default uses only 4).
+                threads = max(4, (os.cpu_count() or 8) // 2) if device == "cpu" else 0
+                m = WhisperModel(name, device=device, compute_type=compute, cpu_threads=threads)
                 list(m.transcribe(np.zeros(RATE, dtype=np.float32), language=cfg["language"] or None)[0])
                 self.model, self.device = m, device
                 log(f"Whisper {name} ready on the {'graphics card' if device == 'cuda' else 'processor'} "

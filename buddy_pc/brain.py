@@ -23,6 +23,11 @@ Start every reply with one emotion tag in square brackets that fits it: [happy],
 
 HISTORY_MINUTES = 5
 
+# Until he has tools on the PC: say so instead of inventing a forecast.
+LIMITS = ("[In this PC body you can't look anything up yet: no weather, news, sports scores, prices or "
+          "anything else live. If asked, say playfully that you can't check from here (your desk body can), "
+          "and never make up a forecast, score or fact.]\n")
+
 
 class Brain:
     def __init__(self, cfg, log):
@@ -43,17 +48,26 @@ class Brain:
         return text.replace("{owner}", self.cfg["owner"])
 
     def notes(self):
-        """The desk Buddy's memory notes (refreshed every 5 minutes)."""
+        """The desk Buddy's memory notes. They're fetched in the background
+        (every 5 minutes), so a desk Buddy that's off or away never holds up
+        an answer."""
         url = self.cfg["desk_buddy_url"]
         if url and time.time() - self._notes_at > 300:
             self._notes_at = time.time()
-            try:
-                r = requests.get(f"{url}/memories", timeout=3)
-                r.raise_for_status()
-                self._notes = parse_notes(r.text)
-            except requests.RequestException as e:
-                self.log(f"couldn't read the desk Buddy's notes ({e}); using the last ones")
+            threading.Thread(target=self._fetch_notes, args=(url,), daemon=True).start()
         return self._notes
+
+    def _fetch_notes(self, url):
+        try:
+            r = requests.get(f"{url}/memories", timeout=5)
+            r.raise_for_status()
+            first = not self._notes
+            self._notes = parse_notes(r.text)
+            if first:
+                self.log(f"read {len(self._notes)} memory notes from the desk Buddy")
+        except requests.RequestException as e:
+            self.log(f"couldn't read the desk Buddy's notes at {url} ({type(e).__name__}); "
+                     "is desk_buddy_url his address? Trying again in 5 minutes")
 
     def diary(self):
         path = self.cfg["eyes_diary"]
@@ -77,6 +91,7 @@ class Brain:
         now = dt.datetime.now()
         return (self.personality() + "\n\n"
                 + f"[It's {now.strftime('%A, %B %d, %Y')}, {now.strftime('%I:%M %p').lstrip('0')}.]\n"
+                + LIMITS
                 + notes_block(self.notes()) + self.diary())
 
     # -- talking --------------------------------------------------------------
