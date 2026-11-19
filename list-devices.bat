@@ -7,5 +7,5 @@ if not exist .venv\Scripts\python.exe (
   pause
   exit /b 1
 )
-.venv\Scripts\python.exe -c "import sounddevice as sd; print(sd.query_devices()); print(); print(\"> = Windows default input, < = default output\")"
+.venv\Scripts\python.exe -m buddy_pc.devices
 pause
