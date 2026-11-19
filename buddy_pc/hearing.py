@@ -82,6 +82,11 @@ class Mic:
         return self.frames.get(timeout=timeout)
 
 
+def loudest_db(pcm, frame=FRAME):
+    """The loudest 80 ms of a recording, in dBFS."""
+    return max((_db(pcm[i:i + frame]) for i in range(0, max(1, len(pcm) - frame + 1), frame)), default=-120.0)
+
+
 class Endpointer:
     """Decides when you started and stopped talking, from loudness compared
     with the room's background level (which it keeps learning)."""
@@ -100,9 +105,9 @@ class Endpointer:
         # Follow the background quickly down, slowly up (speech isn't background).
         self.floor += (db - self.floor) * (0.3 if db < self.floor else 0.02)
 
-    def is_speech(self, frame):
+    def is_speech(self, frame, min_db=-120.0):
         db = _db(frame)
-        if db <= max(self.floor + 12.0, -52.0):
+        if db <= max(self.floor + 12.0, -52.0, min_db):
             return False
         if self.vad is None:
             return True
@@ -112,10 +117,11 @@ class Endpointer:
             self.vad = None
             return True
 
-    def record(self, mic, preroll=(), cancelled=lambda: False, ignore_first=0.0):
+    def record(self, mic, preroll=(), cancelled=lambda: False, ignore_first=0.0, min_db=-120.0):
         """Frames from when you start talking until you stop, or None if you
         didn't say anything (or it was cancelled). The first `ignore_first`
-        seconds are skipped: right after he talks, that's his own echo."""
+        seconds are skipped: right after he talks, that's his own echo.
+        `min_db`: only sound at least this loud counts as talking."""
         frames = list(preroll)
         heard = False
         self.loudest = -120.0
@@ -135,7 +141,7 @@ class Endpointer:
                 continue
             frames.append(f)
             self.loudest = max(self.loudest, _db(f))
-            if self.is_speech(f):
+            if self.is_speech(f, min_db):
                 heard = True
                 last = now
             elif not heard:

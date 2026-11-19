@@ -161,6 +161,14 @@ def test_endpointer_ignores_loud_noise_with_a_voice_detector():
     assert ep.record(FakeMic([_tone(-25) for _ in range(12)])) is None
 
 
+def test_endpointer_follow_up_needs_your_loudness():
+    quiet_voice = [_tone(-40) for _ in range(10)] + [_tone(-65) for _ in range(10)]
+    ep = Endpointer(start_window=1.2, end_silence=0.5)
+    assert ep.record(FakeMic(list(quiet_voice)), min_db=-24 - 10) is None   # a fan or the TV
+    ep = Endpointer(start_window=1.2, end_silence=0.5)
+    assert ep.record(FakeMic(list(quiet_voice))) is not None                 # without the limit: heard
+
+
 def test_endpointer_nothing_said():
     ep = Endpointer(start_window=0.5)
     assert ep.record(FakeMic([_tone(-65) for _ in range(20)])) is None
@@ -306,7 +314,7 @@ def _fake_buddy(replies, heard):
     b.speaker = FakeSpeaker()
     b.mic = type("M", (), {"drain": lambda self: None})()
     heard = list(heard)
-    b.endpoint = type("E", (), {"start_window": 6, "hit_limit": False, "loudest": -30.0, "record": lambda self, mic, cancelled=None, ignore_first=0:
+    b.endpoint = type("E", (), {"start_window": 6, "hit_limit": False, "loudest": -30.0, "record": lambda self, mic, cancelled=None, ignore_first=0, min_db=-120.0:
                                 np.zeros(16000, np.int16) if heard else None})()
     b.ears = type("W", (), {"text": lambda self, pcm, hotwords=None, strict=False: heard.pop(0)})()
     replies = list(replies)

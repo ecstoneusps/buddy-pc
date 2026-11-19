@@ -11,7 +11,7 @@ import traceback
 from . import config as config_mod
 from . import memory
 from .face import Face, expression_for
-from .hearing import strip_phrase
+from .hearing import loudest_db, strip_phrase
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
 DEBUG = bool(os.environ.get("BUDDY_DEBUG"))
@@ -204,6 +204,7 @@ class Buddy:
         follow_up = False
         follow_ups = 0
         last_heard = ""
+        your_level = None  # how loud you were (dB), from the last thing you said
         while True:
             self.state = "listening"
             if first is not None:
@@ -212,8 +213,11 @@ class Buddy:
                 self.mic.drain()
                 self.endpoint.start_window = 5.0 if follow_up else 6.0
                 # After he talks, the first moments are the echo of his own voice.
+                # A follow-up must be about as loud as you were just now
+                # (within 10 dB): quieter voices are a fan, the TV, his echo.
                 pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set,
-                                           ignore_first=0.7 if follow_up else 0)
+                                           ignore_first=0.7 if follow_up else 0,
+                                           min_db=your_level - 10 if follow_up and your_level else -120.0)
             if pcm is None or self.cancel.is_set():
                 if follow_up:
                     log("no follow-up")
@@ -226,7 +230,7 @@ class Buddy:
             t0 = time.time()
             phrase = getattr(self.wake, "phrase", None)
             heard = self.ears.text(pcm, hotwords=phrase.title() if phrase else None, strict=follow_up)
-            log(f"heard: \"{heard}\" ({len(pcm) / 16000:.1f} s, loudest {self.endpoint.loudest:.0f} dB, "
+            log(f"heard: \"{heard}\" ({len(pcm) / 16000:.1f} s, loudest {loudest_db(pcm):.0f} dB, "
                 f"{time.time() - t0:.2f} s to understand)"
                 + (" (stopped at the 20 s limit: something kept sounding like talking)" if self.endpoint.hit_limit
                    else ""))
@@ -247,6 +251,7 @@ class Buddy:
                 log("-> heard the same thing again; that's an echo, not you")
                 return
             last_heard = heard
+            your_level = loudest_db(pcm)
             kind, fact = memory.parse_command(heard)
             if kind:
                 spoken, cancelled = self._answer(heard, iter([self._memory(kind, fact)]))
