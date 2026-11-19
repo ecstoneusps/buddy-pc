@@ -24,6 +24,19 @@ def log(msg, debug=False):
     print(f"{dt.datetime.now().strftime('%H:%M:%S')} {msg}", flush=True)
 
 
+def diary_line(seen, owner):
+    """'Through your camera you see: You are holding an iPhone with... There is
+    no clear...' -> 'Eric is holding an iPhone with...' (the first sentence)."""
+    import re
+    t = seen.split(":", 1)[1].strip() if seen.startswith("Through your camera") else seen.strip()
+    t = re.split(r"(?<=[.!?])\s", t, maxsplit=1)[0].rstrip(".!? ")
+    t = re.sub(r"^(you are|you're)\b", f"{owner} is", t, flags=re.I)
+    t = re.sub(r"^you\b", owner, t, flags=re.I)
+    if not t or re.search(r"\b(can't|cannot|unable|not sure|unclear)\b", t, re.I):
+        return ""  # nothing worth writing down
+    return t[:200]
+
+
 def PhraseWakeType():
     from .hearing import PhraseWake
     return PhraseWake
@@ -311,6 +324,9 @@ class Buddy:
                     self.state = "thinking"
                     try:
                         seen = tools.look(self.cfg, heard, log)
+                        line = diary_line(seen, self.cfg["owner"])
+                        if line:
+                            self.brain.shared.saw(line)
                     except Exception as e:  # noqa: BLE001 (answer anyway, honestly)
                         log(f"couldn't look: {e}")
                         seen = "You couldn't get a look through your camera just now (something went wrong)."

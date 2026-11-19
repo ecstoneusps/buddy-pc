@@ -17,6 +17,7 @@ from .textutil import parse_notes
 CACHE_FILE = os.path.join(HERE, "memories.json")
 STATUS_TOPIC = "buddy_pc/status"     # online / offline
 SAY_TOPIC = "buddy_pc/say"           # something to say out loud (Buddy's eyes' remarks)
+SAW_TOPIC = "buddy_pc/saw"           # what he saw when asked to look (for Buddy's eyes' diary)
 WAKE_TOPIC = "buddy_pc/wake_word"    # what he listens for
 
 
@@ -131,6 +132,11 @@ class SharedNotes:
             self.client.publish(topic, payload, qos=1, retain=True)
             return True
         return False
+
+    def saw(self, text):
+        """What he just saw through the webcam, for Buddy's eyes' diary."""
+        if self.client:
+            self.client.publish(SAW_TOPIC, text, qos=1)
 
     def close(self):
         """Buddy is quitting: tell the desk Buddy to answer again."""

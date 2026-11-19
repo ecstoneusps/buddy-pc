@@ -584,10 +584,21 @@ def test_vision_questions_look_first():
 
     b.brain = type("B", (), {})()
     b.brain.chat = chat
+    sent = []
+    b.brain.shared = type("S", (), {"saw": lambda self, t: sent.append(t)})()
+    b.cfg["owner"] = "Eric"
     with mock.patch.object(tools, "look", lambda cfg, q, log: "Through your camera you see: a black iPhone."):
         b._conversation()
     assert seen["looked"] and "a black iPhone" in seen["extra"]
+    assert sent == ["a black iPhone"]  # for Buddy's eyes' diary
     assert b.speaker.said == ["An iPhone!"]
+
+
+def test_diary_line_from_a_look():
+    from buddy_pc.app import diary_line
+    seen = ("Through your camera you see: You are holding an iPhone with the back facing up. It has a red case.")
+    assert diary_line(seen, "Eric") == "Eric is holding an iPhone with the back facing up"
+    assert diary_line("Through your camera you see: I can't tell what that is.", "Eric") == ""
 
 
 def test_false_wake_is_dropped():
