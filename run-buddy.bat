@@ -3,7 +3,7 @@ cd /d "%~dp0"
 rem Buddy on the PC. The first start sets everything up (a few minutes).
 if not exist .venv\Scripts\python.exe (
   echo Setting up Buddy for the first time...
-  rem 3.12 is best; 3.13, 3.11 and 3.10 work too (3.14+ is too new for some parts).
+  rem 3.12 is best; 3.13, 3.11 and 3.10 work too; 3.14 and newer are too new for some parts.
   for %%v in (3.12 3.13 3.11 3.10) do if not exist .venv\Scripts\python.exe (
     py -%%v -m venv .venv >nul 2>&1 && echo Using Python %%v
   )
@@ -16,7 +16,7 @@ if not exist .venv\Scripts\python.exe (
 rem Install (or update) the parts he needs when requirements.txt is new or changed.
 fc /b requirements.txt .venv\installed.txt >nul 2>&1
 if errorlevel 1 (
-  echo Installing what Buddy needs (only after an update)...
+  echo Installing what Buddy needs, only after an update...
   .venv\Scripts\python.exe -m pip install -q --upgrade pip
   .venv\Scripts\python.exe -m pip install -q -r requirements.txt
   if errorlevel 1 (
