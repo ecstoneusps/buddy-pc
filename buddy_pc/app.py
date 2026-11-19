@@ -122,7 +122,8 @@ class Buddy:
         import requests
         try:
             requests.post(f"{self.cfg['ollama']}/api/generate",
-                          json={"model": self.cfg["chat_model"], "prompt": "", "keep_alive": "30m"}, timeout=120)
+                          json={"model": self.cfg["chat_model"], "prompt": "", "keep_alive": "30m",
+                                "options": {"num_ctx": self.cfg["context_size"]}}, timeout=120)
         except requests.RequestException as e:
             log(f"couldn't reach Ollama at {self.cfg['ollama']}: {e}")
 

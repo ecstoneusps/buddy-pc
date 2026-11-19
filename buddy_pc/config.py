@@ -34,6 +34,9 @@ def load(path=CONFIG_FILE):
         # Brain
         "ollama": _url(g("ollama_url", "http://localhost:11434")),
         "chat_model": g("chat_model", "qwen3:4b-instruct"),
+        # The same as Home Assistant's Ollama "context window size", so the
+        # desk Buddy and the PC share one loaded copy of the model.
+        "context_size": int(g("context_size", "8192")),
         "personality_file": os.path.join(HERE, g("personality_file", "personality.txt")),
         # Ears
         "whisper_model": g("whisper_model", "large-v3-turbo"),

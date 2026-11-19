@@ -107,7 +107,7 @@ class Brain:
             reply = []
             for _ in range(3):  # at most a couple of tool rounds
                 body = {"model": self.cfg["chat_model"], "messages": messages, "stream": True, "keep_alive": "30m",
-                        "options": {"temperature": 0.8}}
+                        "options": {"temperature": 0.8, "num_ctx": self.cfg.get("context_size", 8192)}}
                 if defs:
                     body["tools"] = defs
                 if "instruct" not in self.cfg["chat_model"]:
