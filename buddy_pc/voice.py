@@ -108,6 +108,7 @@ class Ducker:
     def __init__(self, level, log):
         self.level, self.log = level, log  # 0..1 of their volume while he talks; 1 = off
         self.saved = {}  # session -> volume it had
+        self.told = False
         self.ok = level < 1.0
         if self.ok:
             import atexit
@@ -121,14 +122,20 @@ class Ducker:
             import comtypes
             from pycaw.pycaw import AudioUtilities
             comtypes.CoInitialize()
-            me = os.getpid()
+            mine = {os.getpid(), os.getppid()}  # (on Windows, Python may run under a launcher process)
+            names = []
             for s in AudioUtilities.GetAllSessions():
-                if s.Process is None or s.Process.pid == me:
-                    continue
+                p = s.Process
+                if p is None or p.pid in mine or p.name().lower().startswith("python"):
+                    continue  # system sounds, and himself
                 vol = s.SimpleAudioVolume
                 was = vol.GetMasterVolume()
                 vol.SetMasterVolume(was * self.level, None)
                 self.saved[s] = (vol, was)
+                names.append(p.name())
+            if names and not self.told:
+                self.log(f"(turning down while he talks: {', '.join(sorted(set(names)))})")
+                self.told = True
         except Exception as e:  # noqa: BLE001 (no ducking, then)
             self.log(f"couldn't turn the other apps down while talking ({e}); duck_others is off")
             self.ok = False
