@@ -12,3 +12,4 @@ opencv-python
 # The Trofeo Vision screen (USB)
 pyusb
 libusb-package
+psutil

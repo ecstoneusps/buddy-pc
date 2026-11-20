@@ -73,5 +73,6 @@ def load(path=CONFIG_FILE):
         # His face on a Thermalright Trofeo Vision 9.16" screen too
         "trofeo": _on(g("trofeo_screen", "off")),
         "trofeo_rotate": g("trofeo_rotate", "auto"),
+        "trofeo_orientation": g("trofeo_orientation", "portrait").lower(),
         "trofeo_fps": int(g("trofeo_fps", "20")),
     }
