@@ -189,6 +189,10 @@ class Stats:
                 self._said = AFTERBURNER_ERROR[0]
                 self.log(f"Trofeo screen: {AFTERBURNER_ERROR[0]}; using Windows' and NVIDIA's readings")
             self.fps = read_rtss_fps()
+            if self.fps is None and ab:
+                # Afterburner shares RivaTuner's frame rate too (0 when no game is running).
+                fr = pick(ab, "Framerate")
+                self.fps = fr if fr and fr > 0 else None
             time.sleep(1)
 
 
