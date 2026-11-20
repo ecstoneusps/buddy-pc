@@ -456,6 +456,32 @@ class Layout:
         return img
 
 
+def start_after(path, log):
+    """Starts a program once he has the screen (SignalRGB: it opens the screen
+    at startup even while it's disabled there, and then he can't), unless
+    it's already running."""
+    import os
+    import subprocess
+    if not path:
+        return
+    path = path.strip().strip('"')
+    exe = os.path.basename(path).lower()
+    try:
+        import psutil
+        names = {exe}
+        if "signalrgb" in exe:  # its launcher starts SignalRgb.exe
+            names.add("signalrgb.exe")
+        if any((p.info.get("name") or "").lower() in names for p in psutil.process_iter(["name"])):
+            return  # already running
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        subprocess.Popen([path], cwd=os.path.dirname(path) or None, close_fds=True)
+        log(f"Trofeo screen: started {os.path.basename(path)} now that the screen is his")
+    except OSError as e:
+        log(f"Trofeo screen: couldn't start {path} ({e}); check start_after_screen in buddy.ini")
+
+
 def run(face, cfg, log, stop=None, state=lambda: "idle"):
     """Keeps the screen showing the face (a thread). Reconnects if the screen
     goes away (unplugged, or TRCC took it)."""
@@ -470,6 +496,7 @@ def run(face, cfg, log, stop=None, state=lambda: "idle"):
             try:
                 screen = TrofeoScreen(log, cfg.get("trofeo_rotate", "auto"), portrait)
                 warned = False
+                start_after(cfg.get("start_after_screen", ""), log)
             except Exception as e:  # noqa: BLE001 (not there, or busy: try again later)
                 if not warned:
                     log(f"Trofeo screen: {e}")

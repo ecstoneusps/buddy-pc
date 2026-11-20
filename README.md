@@ -109,6 +109,11 @@ quits him (`window = on` shows both). His **tray icon** by the clock (his
 face) has **Show window**, **Hide window** and **Quit Buddy**. How the screen is driven was worked out by the
 [trcc-linux](https://github.com/Lexonight1/thermalright-trcc-linux) project.
 
+If another program opens the screen at startup before he does (SignalRGB does,
+even with the screen disabled in it), he can't use it: turn off that
+program's own "start with Windows" and put its path in `start_after_screen`
+in `buddy.ini`; he starts it once the screen is his.
+
 ## Personality
 
 `personality.txt` is his personality and instructions; edit it freely (`{owner}`

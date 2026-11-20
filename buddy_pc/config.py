@@ -80,4 +80,6 @@ def load(path=CONFIG_FILE):
         "trofeo_rotate": g("trofeo_rotate", "auto"),
         "trofeo_orientation": g("trofeo_orientation", "portrait").lower(),
         "trofeo_fps": int(g("trofeo_fps", "20")),
+        # A program to start once he has the screen (one that would take it first)
+        "start_after_screen": g("start_after_screen", ""),
     }
