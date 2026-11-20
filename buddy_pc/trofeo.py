@@ -67,6 +67,22 @@ def usb_writes(frame):
         pos += size
 
 
+def find_endpoints(dev):
+    """The bulk OUT and IN endpoints, read from the screen's own description
+    (on Windows, the interface with them isn't always the first)."""
+    try:
+        cfg = dev.get_active_configuration()
+    except Exception:  # noqa: BLE001
+        return EP_OUT, EP_IN
+    for intf in cfg:
+        eps = list(intf)
+        outs = [e.bEndpointAddress for e in eps if (e.bmAttributes & 3) == 2 and not e.bEndpointAddress & 0x80]
+        ins = [e.bEndpointAddress for e in eps if (e.bmAttributes & 3) == 2 and e.bEndpointAddress & 0x80]
+        if outs and ins:
+            return outs[0], ins[0]
+    return EP_OUT, EP_IN
+
+
 class TrofeoScreen:
     def __init__(self, log, rotate="auto"):
         import usb.core
@@ -84,9 +100,11 @@ class TrofeoScreen:
         except usb.core.USBError:
             pass  # already configured (Windows)
         self.dev = dev
+        self.ep_out, self.ep_in = find_endpoints(dev)
+        log(f"Trofeo screen: endpoints OUT 0x{self.ep_out:02x}, IN 0x{self.ep_in:02x}")
         try:
-            self.dev.write(EP_OUT, handshake_packet(), timeout=1000)
-            resp = bytes(self.dev.read(EP_IN, 512, timeout=1000))
+            self.dev.write(self.ep_out, handshake_packet(), timeout=1000)
+            resp = bytes(self.dev.read(self.ep_in, 512, timeout=1000))
         except usb.core.USBError as e:
             raise RuntimeError(f"the screen didn't answer ({e}); is Thermalright's TRCC app still running? "
                                "Close it (also from the tray) and try again") from e
@@ -99,9 +117,9 @@ class TrofeoScreen:
         if len(jpeg) >= MAX_JPEG:
             return False
         for part in usb_writes(frame_chunks(jpeg)):
-            self.dev.write(EP_OUT, part, timeout=5000)
+            self.dev.write(self.ep_out, part, timeout=5000)
         try:
-            self.dev.read(EP_IN, 512, timeout=1000)  # its "got it"
+            self.dev.read(self.ep_in, 512, timeout=1000)  # its "got it"
         except usb.core.USBError:
             pass
         return True

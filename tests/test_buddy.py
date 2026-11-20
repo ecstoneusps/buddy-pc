@@ -472,9 +472,16 @@ def test_trofeo_shows_the_face():
     from buddy_pc import trofeo
     writes, reads = [], []
 
+    class EP:
+        def __init__(self, addr):
+            self.bEndpointAddress, self.bmAttributes = addr, 2  # bulk
+
     class Dev:
         def set_configuration(self):
             pass
+
+        def get_active_configuration(self):
+            return [[EP(0x83)], [EP(0x02), EP(0x82)]]  # the second interface has them
 
         def write(self, ep, data, timeout=0):
             writes.append((ep, bytes(data)))
@@ -509,7 +516,7 @@ def test_trofeo_shows_the_face():
     assert frames >= 5, frames  # several pictures a second
     first = next(w for ep, w in writes if w[:2] == bytes([1, 255]))
     assert first[16:18] == bytes([0xFF, 0xD8])  # a JPEG
-    assert all(ep == trofeo.EP_OUT for ep, w in writes) and set(reads) == {trofeo.EP_IN}
+    assert all(ep == 0x02 for ep, w in writes) and set(reads) == {0x82}  # read from the screen
 
 
 # ---------------------------------------------------------------------------
