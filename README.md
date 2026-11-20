@@ -37,6 +37,9 @@ The desk Buddy lives in
   whether it's you or a guest talking (the console shows `voice: owner (score ...)`).
   Say **"learn my voice"** to add three samples through the PC's microphone to
   the voiceprint the desk Buddy made, so he knows you through both microphones.
+- While he talks, **other apps are turned down** (videos, games, music: to
+  `duck_others` = 40 % of their volume) and back up when he's done.
+  `volume` (up to 300 %) makes him louder without distorting.
 - Right-click his face for **Always on top** and **Quit**.
 
 ## What runs where (all on this PC)

@@ -15,3 +15,5 @@ libusb-package
 psutil
 # The tray icon by the clock
 pystray
+# Turning other apps down while he talks (Windows)
+pycaw; sys_platform == "win32"

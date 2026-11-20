@@ -51,7 +51,9 @@ def load(path=CONFIG_FILE):
         "kokoro_host": g("kokoro_host", "localhost"),
         "kokoro_port": int(g("kokoro_port", "10210")),
         "voice": g("voice", "af_heart"),
-        "volume": max(0, min(200, int(g("volume", "100")))),
+        "volume": max(0, min(300, int(g("volume", "100")))),
+        # Other apps' volume while he talks, in % of what it was (100 = leave them)
+        "duck_others": max(0, min(100, int(g("duck_others", "40")))),
         # Home Assistant's MQTT broker: memory notes shared with the desk Buddy
         "mqtt_host": g("mqtt_host", ""),
         "mqtt_port": int(g("mqtt_port", "1883")),

@@ -79,6 +79,70 @@ def level_of(chunk):
     return float(min(1.0, max(0.0, (db + 42.0) / 30.0)))
 
 
+def boost(pcm, gain, ceiling=30000.0):
+    """Louder by `gain`, without clipping: a limiter turns the loudest parts
+    down just enough (per 20 ms, ramped so it doesn't click) to stay under the
+    ceiling, and lets the gain back up slowly. Returns int16."""
+    if gain <= 1.0:
+        return (pcm.astype(np.float32) * gain).astype(np.int16)
+    x = pcm.astype(np.float32)
+    out = np.empty_like(x)
+    block = 320  # 20 ms at 16 kHz (about the same at 24 kHz)
+    g = gain
+    for i in range(0, len(x), block):
+        chunk = x[i:i + block]
+        peak = float(np.max(np.abs(chunk))) if len(chunk) else 0.0
+        target = min(gain, g * 1.06, ceiling / peak if peak > 0 else gain)  # release slowly, attack at once
+        start = min(g, target)
+        ramp = np.linspace(start, target, len(chunk), endpoint=True, dtype=np.float32)
+        out[i:i + block] = chunk * ramp
+        g = target
+    return np.clip(out, -32768, 32767).astype(np.int16)
+
+
+class Ducker:
+    """Turns every other app's volume down while he talks (like a video call
+    does), and back up afterwards. Windows only (its per-app volumes, the
+    Volume Mixer's sliders)."""
+
+    def __init__(self, level, log):
+        self.level, self.log = level, log  # 0..1 of their volume while he talks; 1 = off
+        self.saved = {}  # session -> volume it had
+        self.ok = level < 1.0
+        if self.ok:
+            import atexit
+            atexit.register(self.restore)
+
+    def duck(self):
+        if not self.ok or self.saved:
+            return
+        try:
+            import os
+            import comtypes
+            from pycaw.pycaw import AudioUtilities
+            comtypes.CoInitialize()
+            me = os.getpid()
+            for s in AudioUtilities.GetAllSessions():
+                if s.Process is None or s.Process.pid == me:
+                    continue
+                vol = s.SimpleAudioVolume
+                was = vol.GetMasterVolume()
+                vol.SetMasterVolume(was * self.level, None)
+                self.saved[s] = (vol, was)
+        except Exception as e:  # noqa: BLE001 (no ducking, then)
+            self.log(f"couldn't turn the other apps down while talking ({e}); duck_others is off")
+            self.ok = False
+            self.restore()
+
+    def restore(self):
+        for vol, was in self.saved.values():
+            try:
+                vol.SetMasterVolume(was, None)
+            except Exception:  # noqa: BLE001 (that app has closed)
+                pass
+        self.saved = {}
+
+
 class Speaker:
     """Plays sentences one after another (each is synthesized while the one
     before it plays). say() queues one; end() marks the end of a reply."""
@@ -150,11 +214,13 @@ class Speaker:
     def _play_loop(self):
         import sounddevice as sd
         out, out_rate = None, None
+        ducker = Ducker(self.cfg.get("duck_others", 40) / 100.0, self.log)
         while True:
             item = self._audio.get()
             if item is None:  # end of a reply (or stopped)
                 self.level = 0.0
                 if self._texts.empty() and self._audio.empty():
+                    ducker.restore()
                     if out is not None:  # let the last bit play out, then close
                         try:
                             out.stop()
@@ -169,9 +235,10 @@ class Speaker:
             if self._stop.is_set():
                 continue
             rate, pcm = item
+            ducker.duck()  # (once per reply)
             vol = self.cfg["volume"] / 100.0
             if vol != 1.0:
-                pcm = np.clip(pcm.astype(np.float32) * vol, -32768, 32767).astype(np.int16)
+                pcm = boost(pcm, vol)
             block = rate // 50  # 20 ms
             try:
                 if out is None or out_rate != rate:

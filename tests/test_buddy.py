@@ -216,6 +216,16 @@ def test_kokoro_wyoming_client():
     assert rate == 24000 and len(pcm) == 12000
 
 
+def test_boost_is_louder_without_clipping():
+    t = np.arange(24000) / 24000
+    quiet = (np.sin(2 * np.pi * 220 * t) * (0.2 + 0.3 * (t % 0.5 > 0.25)) * 30000).astype(np.int16)
+    y = voice.boost(quiet, 2.0)
+    rms = lambda a: float(np.sqrt(np.mean(a.astype(np.float64) ** 2)))
+    assert np.abs(y).max() <= 30000                       # never clips
+    assert 20 * np.log10(rms(y) / rms(quiet)) > 4.5       # but clearly louder
+    assert np.array_equal(voice.boost(quiet, 1.0), quiet)
+
+
 def test_level_of():
     assert voice.level_of(np.zeros(320, dtype=np.int16)) == 0.0
     assert voice.level_of(_tone(-12, 320)) > 0.9
