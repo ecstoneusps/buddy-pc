@@ -126,8 +126,15 @@ class Ducker:
             names = []
             for s in AudioUtilities.GetAllSessions():
                 p = s.Process
-                if p is None or p.pid in mine or p.name().lower().startswith("python"):
-                    continue  # system sounds, and himself
+                if p is None:
+                    continue  # system sounds
+                if p.pid in mine or p.name().lower().startswith("python"):
+                    # Himself: always at full volume in Windows' mixer (it remembers
+                    # an app's level between runs, and his once got stuck at 1%).
+                    if s.SimpleAudioVolume.GetMasterVolume() < 0.99:
+                        s.SimpleAudioVolume.SetMasterVolume(1.0, None)
+                        self.log("(his own volume in Windows' mixer was turned down: back to 100%)")
+                    continue
                 vol = s.SimpleAudioVolume
                 was = vol.GetMasterVolume()
                 vol.SetMasterVolume(was * self.level, None)
