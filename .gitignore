@@ -7,3 +7,5 @@ buddy.ini.txt
 memories.json
 memories.json.tmp
 memories-backup.txt
+buddy.log
+buddy.log.old

@@ -68,8 +68,11 @@ The desk Buddy lives in
    up (a few minutes) and downloads the Whisper model (about 1.6 GB) and the
    wake word models, so give it time. Later starts take a few seconds.
 
-5. **Start with Windows** (optional): double-click **start-with-windows.bat**
-   once. He then starts (minimized) whenever you log in;
+5. **No console window** (optional): **run-buddy-quiet.bat** starts him without
+   the black window; his log goes to `buddy.log` and his tray icon by the clock
+   shows his window or quits him. (Only one Buddy runs at a time.)
+6. **Start with Windows** (optional): double-click **start-with-windows.bat**
+   once. He then starts (quietly, as above) whenever you log in;
    **remove-from-startup.bat** undoes it. If Ollama or Kokoro start a little
    later than him, his first answer may take a moment; he keeps trying.
 

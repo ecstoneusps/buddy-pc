@@ -482,10 +482,35 @@ def start_tray(face, commands):
     return icon
 
 
+def quiet_log_and_one_copy():
+    """Without a console (pythonw: run-buddy-quiet.bat), the log goes to
+    buddy.log. And only one Buddy at a time: two would fight over the
+    microphone and the Trofeo screen."""
+    import socket
+    import sys
+    if sys.stdout is None or sys.stderr is None:
+        path = os.path.join(config_mod.HERE, "buddy.log")
+        try:
+            if os.path.getsize(path) > 5_000_000:  # keep it from growing forever
+                os.replace(path, path + ".old")
+        except OSError:
+            pass
+        f = open(path, "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stderr = f
+    lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        lock.bind(("127.0.0.1", 47391))
+    except OSError:
+        log("Buddy is already running (look for his face in the tray by the clock); not starting a second one")
+        sys.exit(0)
+    return lock  # held until he quits
+
+
 def main():
     import tkinter as tk
     from PIL import ImageTk
 
+    _lock = quiet_log_and_one_copy()  # noqa: F841 (kept open while he runs)
     cfg = config_mod.load()
     log(f"Buddy on the PC: chat {cfg['chat_model']}, voice {cfg['voice']}, Whisper {cfg['whisper_model']}")
     buddy = Buddy(cfg)
