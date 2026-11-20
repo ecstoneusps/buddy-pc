@@ -149,7 +149,7 @@ class Stats:
     def __init__(self, log):
         self.log = log
         self.cpu = self.mhz = self.gpu_temp = self.gpu_use = self.cpu_temp = None
-        self._said = False
+        self._said = ""
         threading.Thread(target=self._loop, daemon=True, name="stats").start()
 
     def _loop(self):
@@ -163,8 +163,7 @@ class Stats:
         while True:
             if psutil:
                 self.cpu = psutil.cpu_percent(interval=None)
-                f = psutil.cpu_freq()
-                self.mhz = f.current if f else None
+            self.mhz = None  # (Windows only knows the base clock: only Afterburner's is shown)
             try:
                 out = subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu,utilization.gpu",
                                       "--format=csv,noheader,nounits"], capture_output=True, text=True,
@@ -182,9 +181,13 @@ class Stats:
                 self.gpu_temp = pick(ab, "GPU temperature", "GPU1 temperature") or self.gpu_temp
                 gu = pick(ab, "GPU usage", "GPU1 usage")
                 self.gpu_use = gu if gu is not None else self.gpu_use
-                if not self._said:
-                    self.log(f"Trofeo screen: readings from MSI Afterburner ({len(ab)} graphs)")
-                    self._said = True
+                if self._said != "ok":
+                    names = ", ".join(sorted(ab)[:12])
+                    self.log(f"Trofeo screen: readings from MSI Afterburner ({len(ab)} graphs: {names})")
+                    self._said = "ok"
+            elif self._said != AFTERBURNER_ERROR[0] and AFTERBURNER_ERROR[0]:
+                self._said = AFTERBURNER_ERROR[0]
+                self.log(f"Trofeo screen: {AFTERBURNER_ERROR[0]}; using Windows' and NVIDIA's readings")
             time.sleep(2)
 
 
@@ -206,20 +209,46 @@ def parse_afterburner(buf):
     return out
 
 
+AFTERBURNER_ERROR = [""]  # why the last read failed, for the log
+
+
 def read_afterburner():
-    """{name: value} from MSI Afterburner if it's running (Windows), else {}."""
-    import mmap
+    """{name: value} from MSI Afterburner if it's running (Windows), else {}.
+    Opens its shared memory the way other monitoring tools do (OpenFileMapping),
+    which also works while Afterburner runs as administrator."""
+    import ctypes
     import os
     if os.name != "nt":
         return {}
-    try:
-        with mmap.mmap(-1, 32, tagname="MAHMSharedMemory", access=mmap.ACCESS_READ) as m:
-            header_size, count, entry_size = struct.unpack_from("<3I", m.read(32), 8)
-        size = header_size + count * entry_size + 4096
-        with mmap.mmap(-1, size, tagname="MAHMSharedMemory", access=mmap.ACCESS_READ) as m:
-            return parse_afterburner(m.read(size))
-    except (OSError, ValueError, struct.error):
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.OpenFileMappingW.restype = ctypes.c_void_p
+    k32.OpenFileMappingW.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p]
+    k32.MapViewOfFile.restype = ctypes.c_void_p
+    k32.MapViewOfFile.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_size_t]
+    k32.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
+    k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    FILE_MAP_READ = 0x0004
+    handle = k32.OpenFileMappingW(FILE_MAP_READ, False, "MAHMSharedMemory")
+    if not handle:
+        err = ctypes.get_last_error()
+        AFTERBURNER_ERROR[0] = ("MSI Afterburner isn't running" if err == 2 else
+                                f"couldn't open MSI Afterburner's readings (Windows error {err})")
         return {}
+    try:
+        view = k32.MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0)
+        if not view:
+            AFTERBURNER_ERROR[0] = f"couldn't read MSI Afterburner's readings (Windows error {ctypes.get_last_error()})"
+            return {}
+        try:
+            header_size, count, entry_size = struct.unpack("<3I", ctypes.string_at(view + 8, 12))
+            size = header_size + min(count, 512) * entry_size
+            readings = parse_afterburner(ctypes.string_at(view, size))
+            AFTERBURNER_ERROR[0] = "" if readings else "MSI Afterburner's readings are empty (is monitoring on?)"
+            return readings
+        finally:
+            k32.UnmapViewOfFile(view)
+    finally:
+        k32.CloseHandle(handle)
 
 
 def pick(readings, *names):
