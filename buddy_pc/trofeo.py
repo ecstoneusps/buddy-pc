@@ -161,26 +161,18 @@ class Stats:
             psutil = None
         hide = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW: no console flashing up
         while True:
-            if psutil:
-                self.cpu = psutil.cpu_percent(interval=None)
-            self.mhz = None  # (Windows only knows the base clock: only Afterburner's is shown)
-            try:
-                out = subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu,utilization.gpu",
-                                      "--format=csv,noheader,nounits"], capture_output=True, text=True,
-                                     timeout=5, creationflags=hide).stdout.split("\n")[0].split(",")
-                self.gpu_temp, self.gpu_use = float(out[0]), float(out[1])
-            except (OSError, ValueError, IndexError, subprocess.SubprocessError):
-                self.gpu_temp = self.gpu_use = None
-            self.cpu_temp = _lhm_cpu_temp()
-            # MSI Afterburner (with its CPU graphs on) has them all, CPU temperature included.
-            ab = read_afterburner()
+            # Everything is worked out first and swapped in at once, so a picture
+            # drawn meanwhile never catches a reading half updated (it blinked).
+            cpu = psutil.cpu_percent(interval=None) if psutil else None
+            mhz = None  # (Windows only knows the base clock: only Afterburner's is shown)
+            ab = read_afterburner()  # MSI Afterburner (with its CPU graphs on) has them all
+            gpu_temp = gpu_use = cpu_temp = None
             if ab:
-                self.cpu_temp = pick(ab, "CPU temperature") or self.cpu_temp
-                self.cpu = pick(ab, "CPU usage") if pick(ab, "CPU usage") is not None else self.cpu
-                self.mhz = pick(ab, "CPU clock", "CPU1 clock") or self.mhz
-                self.gpu_temp = pick(ab, "GPU temperature", "GPU1 temperature") or self.gpu_temp
-                gu = pick(ab, "GPU usage", "GPU1 usage")
-                self.gpu_use = gu if gu is not None else self.gpu_use
+                cpu_temp = pick(ab, "CPU temperature")
+                cpu = pick(ab, "CPU usage") if pick(ab, "CPU usage") is not None else cpu
+                mhz = pick(ab, "CPU clock", "CPU1 clock")
+                gpu_temp = pick(ab, "GPU temperature", "GPU1 temperature")
+                gpu_use = pick(ab, "GPU usage", "GPU1 usage")
                 if self._said != "ok":
                     names = ", ".join(sorted(ab)[:12])
                     self.log(f"Trofeo screen: readings from MSI Afterburner ({len(ab)} graphs: {names})")
@@ -188,11 +180,24 @@ class Stats:
             elif self._said != AFTERBURNER_ERROR[0] and AFTERBURNER_ERROR[0]:
                 self._said = AFTERBURNER_ERROR[0]
                 self.log(f"Trofeo screen: {AFTERBURNER_ERROR[0]}; using Windows' and NVIDIA's readings")
-            self.fps = read_rtss_fps()
-            if self.fps is None and ab:
+            if gpu_temp is None or gpu_use is None:
+                try:
+                    out = subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu,utilization.gpu",
+                                          "--format=csv,noheader,nounits"], capture_output=True, text=True,
+                                         timeout=5, creationflags=hide).stdout.split("\n")[0].split(",")
+                    gpu_temp = float(out[0]) if gpu_temp is None else gpu_temp
+                    gpu_use = float(out[1]) if gpu_use is None else gpu_use
+                except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+                    pass
+            if cpu_temp is None:
+                cpu_temp = _lhm_cpu_temp()
+            fps = read_rtss_fps()
+            if fps is None and ab:
                 # Afterburner shares RivaTuner's frame rate too (0 when no game is running).
                 fr = pick(ab, "Framerate")
-                self.fps = fr if fr and fr > 0 else None
+                fps = fr if fr and fr > 0 else None
+            (self.cpu, self.mhz, self.cpu_temp, self.gpu_temp, self.gpu_use,
+             self.fps) = (cpu, mhz, cpu_temp, gpu_temp, gpu_use, fps)
             time.sleep(1)
 
 
