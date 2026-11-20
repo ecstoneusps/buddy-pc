@@ -528,9 +528,11 @@ def test_trofeo_shows_the_face():
             pass
 
         def get_active_configuration(self):
-            return [[EP(0x83)], [EP(0x02), EP(0x82)]]  # the second interface has them
+            return [[EP(0x83)], [EP(0x09), EP(0x02), EP(0x82)]]  # 0x09 is tried first and fails
 
         def write(self, ep, data, timeout=0):
+            if ep == 0x09:  # a pair that's listed but doesn't answer
+                raise OSError("no answer")
             writes.append((ep, bytes(data)))
 
         def read(self, ep, n, timeout=0):

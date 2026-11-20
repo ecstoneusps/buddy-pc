@@ -71,20 +71,25 @@ def usb_writes(frame):
         pos += size
 
 
-def find_endpoints(dev):
-    """The bulk OUT and IN endpoints, read from the screen's own description
-    (on Windows, the interface with them isn't always the first)."""
+def endpoint_pairs(dev):
+    """Every (bulk OUT, bulk IN) endpoint pair the screen offers, from its own
+    description. It has more than one, and Windows doesn't always list them
+    in the same order (after a restart it was 0x01 first, before 0x09), so
+    each is tried until the screen answers."""
+    pairs = []
     try:
         cfg = dev.get_active_configuration()
+        for intf in cfg:
+            eps = list(intf)
+            outs = [e.bEndpointAddress for e in eps if (e.bmAttributes & 3) == 2 and not e.bEndpointAddress & 0x80]
+            ins = [e.bEndpointAddress for e in eps if (e.bmAttributes & 3) == 2 and e.bEndpointAddress & 0x80]
+            pairs += [(o, i) for o in outs for i in ins]
     except Exception:  # noqa: BLE001
-        return EP_OUT, EP_IN
-    for intf in cfg:
-        eps = list(intf)
-        outs = [e.bEndpointAddress for e in eps if (e.bmAttributes & 3) == 2 and not e.bEndpointAddress & 0x80]
-        ins = [e.bEndpointAddress for e in eps if (e.bmAttributes & 3) == 2 and e.bEndpointAddress & 0x80]
-        if outs and ins:
-            return outs[0], ins[0]
-    return EP_OUT, EP_IN
+        pass
+    # The ones seen to work first (0x09 on Windows, 0x01 in trcc-linux).
+    known = [(0x09, EP_IN), (EP_OUT, EP_IN)]
+    ordered = [p for p in known if p in pairs] + [p for p in pairs if p not in known]
+    return ordered or known
 
 
 class TrofeoScreen:
@@ -104,17 +109,24 @@ class TrofeoScreen:
         except usb.core.USBError:
             pass  # already configured (Windows)
         self.dev = dev
-        self.ep_out, self.ep_in = find_endpoints(dev)
-        log(f"Trofeo screen: endpoints OUT 0x{self.ep_out:02x}, IN 0x{self.ep_in:02x}")
-        try:
-            self.dev.write(self.ep_out, handshake_packet(), timeout=1000)
-            resp = bytes(self.dev.read(self.ep_in, 512, timeout=1000))
-        except usb.core.USBError as e:
-            raise RuntimeError(f"the screen didn't answer ({e}); is Thermalright's TRCC app still running? "
-                               "Close it (also from the tray) and try again") from e
+        resp, tried, last = None, [], None
+        for out_ep, in_ep in endpoint_pairs(dev):
+            tried.append(f"0x{out_ep:02x}")
+            try:
+                dev.write(out_ep, handshake_packet(), timeout=1000)
+                r = bytes(dev.read(in_ep, 512, timeout=1000))
+                parse_handshake(r)
+            except (usb.core.USBError, ValueError) as e:
+                last = e
+                continue
+            self.ep_out, self.ep_in, resp = out_ep, in_ep, r
+            break
+        if resp is None:
+            raise RuntimeError(f"the screen didn't answer on any of its endpoints ({', '.join(tried)}: {last}); "
+                               "is another program using it (Thermalright's TRCC app, SignalRGB)?")
         sub = parse_handshake(resp)
         self.angle = angle_for(sub, rotate, portrait)
-        log(f"Trofeo Vision screen ready (SUB {sub}, pictures turned {self.angle}°)")
+        log(f"Trofeo Vision screen ready (endpoint 0x{self.ep_out:02x}, SUB {sub}, pictures turned {self.angle}°)")
 
     def send_jpeg(self, jpeg):
         import usb.core
