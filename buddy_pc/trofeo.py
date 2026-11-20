@@ -316,10 +316,12 @@ class Layout:
     def _vitals(self):
         s = self.stats
         f = lambda v, unit, nd=0: "--" if v is None else f"{v:.{nd}f}{unit}"
-        return [("CPU", f(s.cpu_temp, "°C") if s.cpu_temp is not None else f(s.cpu, "%"),
-                 (f(s.cpu, "% busy") if s.cpu_temp is not None else "") + ("  " if s.cpu_temp is not None else "")
-                 + f(s.mhz, " MHz")),
-                ("GPU", f(s.gpu_temp, "°C"), f(s.gpu_use, "% busy"))]
+        if s.cpu_temp is not None:  # the temperature big, the load and clock small
+            cpu_big = f(s.cpu_temp, "°C")
+            cpu_small = "  ".join(x for x in (f(s.cpu, "% busy"), None if s.mhz is None else f(s.mhz, " MHz")) if x)
+        else:
+            cpu_big, cpu_small = f(s.cpu, "%"), ("" if s.mhz is None else f(s.mhz, " MHz"))
+        return [("CPU", cpu_big, cpu_small), ("GPU", f(s.gpu_temp, "°C"), f(s.gpu_use, "% busy"))]
 
     def _box(self, d, xy, title, big, small, accent):
         from PIL import ImageDraw  # noqa: F401
