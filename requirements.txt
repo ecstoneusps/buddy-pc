@@ -9,3 +9,6 @@ nvidia-cudnn-cu12>=9,<10
 openwakeword
 paho-mqtt>=2.0
 opencv-python
+# The Trofeo Vision screen (USB)
+pyusb
+libusb-package

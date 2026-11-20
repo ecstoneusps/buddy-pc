@@ -80,6 +80,16 @@ list, and put part of its name in `microphone =` in `buddy.ini` (the same for
 `speaker =`).
 The black console window shows what he hears and says.
 
+## On a Thermalright Trofeo Vision screen
+
+His face can also show on a Thermalright **Trofeo Vision 9.16"** screen (USB
+`0416:5408`): set `trofeo_screen = on` in `buddy.ini`. Close Thermalright's
+TRCC app first (also from the tray): only one program can use the screen at a
+time. If he's upside down, set `trofeo_rotate` to `0` or `180`. If the screen
+isn't there or is busy, he keeps trying every few seconds and the window works
+as usual. How the screen is driven was worked out by the
+[trcc-linux](https://github.com/Lexonight1/thermalright-trcc-linux) project.
+
 ## Personality
 
 `personality.txt` is his personality and instructions; edit it freely (`{owner}`

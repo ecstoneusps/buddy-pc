@@ -70,4 +70,8 @@ def load(path=CONFIG_FILE):
         # Window
         "window_width": max(160, int(g("window_width", "320"))),
         "always_on_top": _on(g("always_on_top", "on")),
+        # His face on a Thermalright Trofeo Vision 9.16" screen too
+        "trofeo": _on(g("trofeo_screen", "off")),
+        "trofeo_rotate": g("trofeo_rotate", "auto"),
+        "trofeo_fps": int(g("trofeo_fps", "20")),
     }

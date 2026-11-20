@@ -430,6 +430,89 @@ def test_shared_notes_newest_wins_and_survive_a_restart():
 
 
 # ---------------------------------------------------------------------------
+# The Trofeo Vision screen (no USB: the pieces are checked byte by byte)
+
+
+def test_trofeo_pieces():
+    import struct as st
+    from buddy_pc import trofeo
+    hs = trofeo.handshake_packet()
+    assert len(hs) == 2048 and hs[:16] == bytes([2, 255, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+    assert not any(hs[16:])
+    for n in (1, 495, 496, 497, 1984, 30001):
+        jpg = bytes(range(256)) * (n // 256) + bytes(range(n % 256))
+        frame = trofeo.frame_chunks(jpg)
+        count = n // 496 + 1
+        assert len(frame) % (4 * 512) == 0 and len(frame) // 512 >= count
+        got = b""
+        for i in range(count):
+            c = frame[i * 512:(i + 1) * 512]
+            total, size = st.unpack_from("<IH", c, 2)
+            cnt, idx = st.unpack_from("<HH", c, 9)
+            assert c[0] == 1 and c[1] == 255 and c[8] == 1 and total == n and (cnt, idx) == (count, i)
+            assert size == (496 if i < count - 1 else n % 496)
+            got += c[16:16 + size]
+        assert got == jpg and not any(frame[count * 512:])  # padding is zeros
+        writes = list(trofeo.usb_writes(frame))
+        assert b"".join(writes) == frame and all(len(w) in (4096, 2048) for w in writes)
+    reply = bytearray(512)
+    reply[0], reply[1], reply[8], reply[22] = 3, 255, 1, 4
+    assert trofeo.parse_handshake(reply) == 5 and trofeo.angle_for(5) == 180
+    assert trofeo.angle_for(3) == 0 and trofeo.angle_for(5, "0") == 0
+    try:
+        trofeo.parse_handshake(bytes(512))
+        assert False
+    except ValueError:
+        pass
+
+
+def test_trofeo_shows_the_face():
+    import sys as _sys
+    import types as _types
+    from buddy_pc import trofeo
+    writes, reads = [], []
+
+    class Dev:
+        def set_configuration(self):
+            pass
+
+        def write(self, ep, data, timeout=0):
+            writes.append((ep, bytes(data)))
+
+        def read(self, ep, n, timeout=0):
+            reads.append(ep)
+            r = bytearray(n)
+            r[0], r[1], r[8], r[22] = 3, 255, 1, 4
+            return r
+
+    usb = _types.ModuleType("usb")
+    usb.core = _types.ModuleType("usb.core")
+    usb.core.find = lambda **k: Dev()
+    usb.core.USBError = OSError
+    saved = {k: _sys.modules.get(k) for k in ("usb", "usb.core")}
+    _sys.modules.update({"usb": usb, "usb.core": usb.core})
+    try:
+        stop = threading.Event()
+        t = threading.Thread(target=trofeo.run, args=(Face(seed=2), {"trofeo_fps": 30}, lambda *a, **k: None, stop))
+        t.start()
+        time.sleep(1.0)
+        stop.set()
+        t.join(5)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                _sys.modules.pop(k, None)
+            else:
+                _sys.modules[k] = v
+    assert writes[0][1] == trofeo.handshake_packet()
+    frames = sum(1 for ep, w in writes if w[:2] == bytes([1, 255]) and w[11:13] == bytes(2))  # first pieces
+    assert frames >= 5, frames  # several pictures a second
+    first = next(w for ep, w in writes if w[:2] == bytes([1, 255]))
+    assert first[16:18] == bytes([0xFF, 0xD8])  # a JPEG
+    assert all(ep == trofeo.EP_OUT for ep, w in writes) and set(reads) == {trofeo.EP_IN}
+
+
+# ---------------------------------------------------------------------------
 # The conversation, with stand-ins for the microphone, Whisper, Ollama and Kokoro
 
 

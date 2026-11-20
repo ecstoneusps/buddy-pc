@@ -507,6 +507,10 @@ def main():
         label.configure(image=photo[0])
         root.after(33, frame)
 
+    if cfg["trofeo"]:
+        from . import trofeo
+        threading.Thread(target=trofeo.run, args=(face, cfg, log), daemon=True, name="trofeo").start()
+
     root.after(50, frame)
     root.mainloop()
     if getattr(buddy, "brain", None):
