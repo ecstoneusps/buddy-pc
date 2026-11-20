@@ -195,7 +195,7 @@ class Stats:
             if fps is None and ab:
                 # Afterburner shares RivaTuner's frame rate too (0 when no game is running).
                 fr = pick(ab, "Framerate")
-                fps = fr if fr and fr > 0 else None
+                fps = fr if fr and 0 < fr < 2000 else None
             (self.cpu, self.mhz, self.cpu_temp, self.gpu_temp, self.gpu_use,
              self.fps) = (cpu, mhz, cpu_temp, gpu_temp, gpu_use, fps)
             time.sleep(1)
@@ -297,6 +297,8 @@ def parse_rtss(buf, now_ms):
         if t1 <= t0 or (now_ms - t1) & 0xFFFFFFFF > 2000:
             continue  # nothing recent from this app
         fps = frames * 1000.0 / (t1 - t0)
+        if not 0 < fps < 2000:
+            continue  # not a real frame rate
         if best is None or t1 > best[0]:
             best = (t1, fps)
     return None if best is None else best[1]
@@ -320,10 +322,12 @@ def read_rtss_fps():
 
 
 def pick(readings, *names):
+    """The first of `names` Afterburner has, or None. Afterburner marks "no
+    data" with the biggest float there is (3.4e38): that counts as none too."""
     for n in names:
         for k, v in readings.items():
             if k.lower() == n.lower():
-                return v
+                return v if v == v and abs(v) < 1e9 else None  # (v == v: not NaN)
     return None
 
 

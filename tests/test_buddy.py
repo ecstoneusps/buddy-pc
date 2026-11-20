@@ -490,6 +490,8 @@ def test_afterburner_readings():
     r = trofeo.parse_afterburner(bytes(buf))
     assert r == {"CPU temperature": 44.0, "CPU usage": 6.0, "GPU temperature": 51.0, "GPU usage": 12.0}
     assert trofeo.pick(r, "cpu temperature") == 44.0 and trofeo.pick(r, "nothing") is None
+    assert trofeo.pick({"Framerate": 3.4028234663852886e38}, "Framerate") is None  # Afterburner's "no data"
+    assert trofeo.pick({"Framerate": float("nan")}, "Framerate") is None
     st.pack_into("<I", buf, 0, 0xDEAD)  # Afterburner closed
     assert trofeo.parse_afterburner(bytes(buf)) == {}
 
