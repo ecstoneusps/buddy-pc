@@ -266,7 +266,6 @@ class Speaker:
             if self._stop.is_set():
                 continue
             rate, pcm = item
-            ducker.duck()  # (once per reply)
             vol = self.cfg["volume"] / 100.0
             if vol != 1.0:
                 pcm = boost(pcm, vol)
@@ -279,6 +278,9 @@ class Speaker:
                                           device=self._speaker_device())
                     out.start()
                     out_rate = rate
+                # (After his sound has started, so Windows lists him too and his
+                # own level can be checked; once per reply.)
+                ducker.duck()
                 for i in range(0, len(pcm), block):
                     if self._stop.is_set():
                         out.abort()
