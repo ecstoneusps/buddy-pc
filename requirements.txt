@@ -13,3 +13,5 @@ opencv-python
 pyusb
 libusb-package
 psutil
+# The tray icon by the clock
+pystray

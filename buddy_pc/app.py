@@ -462,6 +462,26 @@ class Buddy:
 # ---------------------------------------------------------------------------
 # The window
 
+def start_tray(face, commands):
+    """A tray icon by the clock (his face): Show / Hide window, Quit. None if
+    pystray isn't available."""
+    try:
+        import pystray
+    except Exception:  # noqa: BLE001 (not installed, or no desktop to put it on)
+        return None
+    from PIL import Image
+    icon_img = Image.new("RGB", (64, 64), (0, 0, 0))
+    icon_img.paste(face.render(64, 48), (0, 8))
+    menu = pystray.Menu(
+        pystray.MenuItem("Show window", lambda: commands.put("show"), default=True),
+        pystray.MenuItem("Hide window", lambda: commands.put("hide")),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Quit Buddy", lambda: commands.put("quit")))
+    icon = pystray.Icon("buddy", icon_img, "Buddy", menu)
+    threading.Thread(target=icon.run, daemon=True, name="tray").start()
+    return icon
+
+
 def main():
     import tkinter as tk
     from PIL import ImageTk
@@ -501,6 +521,18 @@ def main():
         face.set_expression(buddy.expression())
         face.set_talk_level(buddy.talk_level())
         face.update(dt_ms)
+        while not commands.empty():  # from the tray icon (its own thread)
+            cmd = commands.get()
+            if cmd == "quit":
+                root.destroy()
+                return
+            if cmd == "show":
+                root.deiconify()
+                root.lift()
+                hidden[0] = False
+            elif cmd == "hide":
+                root.withdraw()
+                hidden[0] = True
         if hidden[0]:  # only on the Trofeo screen: nothing to draw here
             root.after(33, frame)
             return
@@ -517,15 +549,20 @@ def main():
     # The window: hidden while he's on the Trofeo screen (window = auto), and
     # closing it then only hides it; he keeps running there.
     hidden = [cfg["window"] == "off" or (cfg["window"] == "auto" and cfg["trofeo"])]
+    commands = queue.Queue()
+    tray = start_tray(face, commands)
     if hidden[0]:
         root.withdraw()
-        log("no window: he's on the Trofeo screen (close this console window to quit him)")
+        log("no window: he's on the Trofeo screen" + (" (the tray icon by the clock shows it, or quits him)"
+                                                         if tray else " (close this console window to quit him)"))
+
 
     def close():
-        if cfg["trofeo"]:
+        if cfg["trofeo"] or tray:
             root.withdraw()
             hidden[0] = True
-            log("window closed: he keeps running on the Trofeo screen (close this console window to quit him)")
+            log("window closed: he keeps running" + (" (the tray icon by the clock shows it again or quits him)"
+                                                      if tray else " on the Trofeo screen (close this console to quit)"))
         else:
             root.destroy()
 
@@ -533,6 +570,8 @@ def main():
 
     root.after(50, frame)
     root.mainloop()
+    if tray:
+        tray.stop()
     if getattr(buddy, "brain", None):
         buddy.brain.shared.close()
 

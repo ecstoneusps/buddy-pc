@@ -99,7 +99,8 @@ time. If he's upside down, set `trofeo_rotate` to `0` or `180`. If the screen
 isn't there or is busy, he keeps trying every few seconds and the window works
 as usual. While he's on the screen, his window stays hidden (`window =
 auto`); closing it then only hides it, and closing the black console window
-quits him (`window = on` shows both). How the screen is driven was worked out by the
+quits him (`window = on` shows both). His **tray icon** by the clock (his
+face) has **Show window**, **Hide window** and **Quit Buddy**. How the screen is driven was worked out by the
 [trcc-linux](https://github.com/Lexonight1/thermalright-trcc-linux) project.
 
 ## Personality
