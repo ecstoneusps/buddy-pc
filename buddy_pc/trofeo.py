@@ -148,7 +148,7 @@ class Stats:
 
     def __init__(self, log):
         self.log = log
-        self.cpu = self.mhz = self.gpu_temp = self.gpu_use = self.cpu_temp = None
+        self.cpu = self.mhz = self.gpu_temp = self.gpu_use = self.cpu_temp = self.fps = None
         self._said = ""
         threading.Thread(target=self._loop, daemon=True, name="stats").start()
 
@@ -188,7 +188,8 @@ class Stats:
             elif self._said != AFTERBURNER_ERROR[0] and AFTERBURNER_ERROR[0]:
                 self._said = AFTERBURNER_ERROR[0]
                 self.log(f"Trofeo screen: {AFTERBURNER_ERROR[0]}; using Windows' and NVIDIA's readings")
-            time.sleep(2)
+            self.fps = read_rtss_fps()
+            time.sleep(1)
 
 
 def parse_afterburner(buf):
@@ -212,14 +213,15 @@ def parse_afterburner(buf):
 AFTERBURNER_ERROR = [""]  # why the last read failed, for the log
 
 
-def read_afterburner():
-    """{name: value} from MSI Afterburner if it's running (Windows), else {}.
-    Opens its shared memory the way other monitoring tools do (OpenFileMapping),
-    which also works while Afterburner runs as administrator."""
+def read_shared(name, size_at=None):
+    """The bytes of another program's named shared memory (Windows), or
+    (None, why). `size_at(header_bytes)` works out how much to read from its
+    first 64 bytes. Opened the way monitoring tools do (OpenFileMapping), which
+    also works while that program runs as administrator."""
     import ctypes
     import os
     if os.name != "nt":
-        return {}
+        return None, "not Windows"
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.OpenFileMappingW.restype = ctypes.c_void_p
     k32.OpenFileMappingW.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p]
@@ -228,27 +230,84 @@ def read_afterburner():
     k32.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
     k32.CloseHandle.argtypes = [ctypes.c_void_p]
     FILE_MAP_READ = 0x0004
-    handle = k32.OpenFileMappingW(FILE_MAP_READ, False, "MAHMSharedMemory")
+    handle = k32.OpenFileMappingW(FILE_MAP_READ, False, name)
     if not handle:
         err = ctypes.get_last_error()
-        AFTERBURNER_ERROR[0] = ("MSI Afterburner isn't running" if err == 2 else
-                                f"couldn't open MSI Afterburner's readings (Windows error {err})")
-        return {}
+        return None, ("not running" if err == 2 else f"Windows error {err}")
     try:
         view = k32.MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0)
         if not view:
-            AFTERBURNER_ERROR[0] = f"couldn't read MSI Afterburner's readings (Windows error {ctypes.get_last_error()})"
-            return {}
+            return None, f"Windows error {ctypes.get_last_error()}"
         try:
-            header_size, count, entry_size = struct.unpack("<3I", ctypes.string_at(view + 8, 12))
-            size = header_size + min(count, 512) * entry_size
-            readings = parse_afterburner(ctypes.string_at(view, size))
-            AFTERBURNER_ERROR[0] = "" if readings else "MSI Afterburner's readings are empty (is monitoring on?)"
-            return readings
+            head = ctypes.string_at(view, 64)
+            return ctypes.string_at(view, size_at(head) if size_at else 64), ""
         finally:
             k32.UnmapViewOfFile(view)
     finally:
         k32.CloseHandle(handle)
+
+
+def read_afterburner():
+    """{name: value} from MSI Afterburner if it's running (Windows), else {}."""
+    def size(head):
+        header_size, count, entry_size = struct.unpack_from("<3I", head, 8)
+        return header_size + min(count, 512) * entry_size
+    try:
+        buf, why = read_shared("MAHMSharedMemory", size)
+    except (OSError, struct.error) as e:
+        buf, why = None, str(e)
+    if buf is None:
+        AFTERBURNER_ERROR[0] = ("MSI Afterburner isn't running" if why == "not running" else
+                                f"couldn't read MSI Afterburner's readings ({why})")
+        return {}
+    readings = parse_afterburner(buf)
+    AFTERBURNER_ERROR[0] = "" if readings else "MSI Afterburner's readings are empty (is monitoring on?)"
+    return readings
+
+
+# RivaTuner Statistics Server: one entry per app it's drawing on (a game),
+# with frames counted over a time window: frames / time = FPS.
+_RTSS_SIG = 0x52545353  # "RTSS"
+
+
+def parse_rtss(buf, now_ms):
+    """The frame rate of the app RivaTuner updated most recently (within 2 s
+    of now_ms, GetTickCount's clock), or None if no game is running."""
+    sig, version, entry_size, arr_offset, arr_size = struct.unpack_from("<5I", buf, 0)
+    if sig != _RTSS_SIG or not entry_size:
+        return None
+    best = None
+    for i in range(min(arr_size, 256)):
+        at = arr_offset + i * entry_size
+        if at + 284 > len(buf):
+            break
+        pid = struct.unpack_from("<I", buf, at)[0]
+        if not pid:
+            continue
+        t0, t1, frames = struct.unpack_from("<3I", buf, at + 268)
+        if t1 <= t0 or (now_ms - t1) & 0xFFFFFFFF > 2000:
+            continue  # nothing recent from this app
+        fps = frames * 1000.0 / (t1 - t0)
+        if best is None or t1 > best[0]:
+            best = (t1, fps)
+    return None if best is None else best[1]
+
+
+def read_rtss_fps():
+    import ctypes
+    import os
+    if os.name != "nt":
+        return None
+    def size(head):
+        _, _, entry_size, arr_offset, arr_size = struct.unpack_from("<5I", head, 0)
+        return arr_offset + min(arr_size, 256) * entry_size
+    try:
+        buf, _ = read_shared("RTSSSharedMemoryV2", size)
+    except (OSError, struct.error):
+        return None
+    if buf is None:
+        return None
+    return parse_rtss(buf, ctypes.windll.kernel32.GetTickCount())
 
 
 def pick(readings, *names):
@@ -349,12 +408,16 @@ class Layout:
             img.paste(self.face.render(w, 640), (0, 200))
             self._box(d, (24, 880, w - 24, 1250), cpu_t, cpu_big, cpu_small, accent)
             self._box(d, (24, 1290, w - 24, 1660), gpu_t, gpu_big, gpu_small, accent)
-            d.text((w // 2, 1760), "Buddy", font=self.f_mid, fill=accent, anchor="mm")
+            fps = self.stats.fps
+            d.text((w // 2, 1760), "Buddy" if fps is None else f"{fps:.0f} FPS", font=self.f_mid, fill=accent,
+                   anchor="mm")
         else:
             fw = HEIGHT * 4 // 3
             img.paste(self.face.render(fw, HEIGHT), ((WIDTH - fw) // 2, 0))
             d.text((330, 150), clock, font=self.f_big, fill=(255, 255, 255), anchor="mm")
             d.text((330, 250), date, font=self.f_mid, fill=accent, anchor="mm")
+            if self.stats.fps is not None:
+                d.text((330, 350), f"{self.stats.fps:.0f} FPS", font=self.f_mid, fill=(255, 255, 255), anchor="mm")
             self._box(d, (WIDTH - 600, 30, WIDTH - 330, 432), cpu_t, cpu_big, cpu_small, accent)
             self._box(d, (WIDTH - 300, 30, WIDTH - 30, 432), gpu_t, gpu_big, gpu_small, accent)
         return img

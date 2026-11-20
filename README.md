@@ -88,7 +88,8 @@ take his mood's colour): set `trofeo_screen = on` in `buddy.ini`
 (`trofeo_orientation = portrait` for a screen standing up, `landscape` lying
 down). The readings come from **MSI Afterburner** when it's running (the
 same ones RivaTuner shows: turn on the CPU temperature, CPU usage, CPU clock,
-GPU temperature and GPU usage graphs in its monitoring settings). Without it,
+GPU temperature and GPU usage graphs in its monitoring settings). While a game
+runs, the frame rate from **RivaTuner** replaces "Buddy" at the bottom. Without it,
 the GPU readings come from NVIDIA's driver and the CPU's load stands in for
 its temperature (or
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)

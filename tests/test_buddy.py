@@ -484,6 +484,23 @@ def test_afterburner_readings():
     assert trofeo.parse_afterburner(bytes(buf)) == {}
 
 
+def test_rivatuner_fps():
+    import struct as st
+    from buddy_pc import trofeo
+    entry, offset = 300, 64
+    buf = bytearray(offset + entry * 3)
+    st.pack_into("<5I", buf, 0, 0x52545353, 0x00020000, entry, offset, 3)
+    st.pack_into("<I", buf, offset + 0 * entry, 0)  # an empty slot
+    for i, (pid, t0, t1, frames) in enumerate([(111, 1000, 2000, 30), (222, 9000, 10000, 144)], start=1):
+        at = offset + i * entry
+        st.pack_into("<I", buf, at, pid)
+        st.pack_into("<3I", buf, at + 268, t0, t1, frames)
+    assert round(trofeo.parse_rtss(bytes(buf), now_ms=10500)) == 144  # the game updated most recently
+    assert trofeo.parse_rtss(bytes(buf), now_ms=20000) is None       # nothing recent: no game running
+    st.pack_into("<I", buf, 0, 0)
+    assert trofeo.parse_rtss(bytes(buf), now_ms=10500) is None       # not RivaTuner's memory
+
+
 def test_trofeo_shows_the_face():
     import sys as _sys
     import types as _types
