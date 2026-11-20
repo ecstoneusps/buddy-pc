@@ -149,6 +149,7 @@ class Stats:
     def __init__(self, log):
         self.log = log
         self.cpu = self.mhz = self.gpu_temp = self.gpu_use = self.cpu_temp = None
+        self._said = False
         threading.Thread(target=self._loop, daemon=True, name="stats").start()
 
     def _loop(self):
@@ -172,7 +173,61 @@ class Stats:
             except (OSError, ValueError, IndexError, subprocess.SubprocessError):
                 self.gpu_temp = self.gpu_use = None
             self.cpu_temp = _lhm_cpu_temp()
+            # MSI Afterburner (with its CPU graphs on) has them all, CPU temperature included.
+            ab = read_afterburner()
+            if ab:
+                self.cpu_temp = pick(ab, "CPU temperature") or self.cpu_temp
+                self.cpu = pick(ab, "CPU usage") if pick(ab, "CPU usage") is not None else self.cpu
+                self.mhz = pick(ab, "CPU clock", "CPU1 clock") or self.mhz
+                self.gpu_temp = pick(ab, "GPU temperature", "GPU1 temperature") or self.gpu_temp
+                gu = pick(ab, "GPU usage", "GPU1 usage")
+                self.gpu_use = gu if gu is not None else self.gpu_use
+                if not self._said:
+                    self.log(f"Trofeo screen: readings from MSI Afterburner ({len(ab)} graphs)")
+                    self._said = True
             time.sleep(2)
+
+
+def parse_afterburner(buf):
+    """MSI Afterburner's shared readings ("MAHMSharedMemory": a header, then
+    one entry per graph): {name: value}, e.g. {"CPU temperature": 44.0}."""
+    sig, version, header_size, count, entry_size = struct.unpack_from("<5I", buf, 0)
+    if sig != 0x4D41484D or not header_size or not entry_size:  # "MAHM" (0xDEAD: Afterburner closed)
+        return {}
+    out = {}
+    for i in range(min(count, 512)):
+        at = header_size + i * entry_size
+        if at + 1304 > len(buf):
+            break
+        name = bytes(buf[at:at + 260]).split(b"\0", 1)[0].decode("latin-1").strip()
+        (value,) = struct.unpack_from("<f", buf, at + 1300)  # after five 260-character strings
+        if name and name not in out:
+            out[name] = value
+    return out
+
+
+def read_afterburner():
+    """{name: value} from MSI Afterburner if it's running (Windows), else {}."""
+    import mmap
+    import os
+    if os.name != "nt":
+        return {}
+    try:
+        with mmap.mmap(-1, 32, tagname="MAHMSharedMemory", access=mmap.ACCESS_READ) as m:
+            header_size, count, entry_size = struct.unpack_from("<3I", m.read(32), 8)
+        size = header_size + count * entry_size + 4096
+        with mmap.mmap(-1, size, tagname="MAHMSharedMemory", access=mmap.ACCESS_READ) as m:
+            return parse_afterburner(m.read(size))
+    except (OSError, ValueError, struct.error):
+        return {}
+
+
+def pick(readings, *names):
+    for n in names:
+        for k, v in readings.items():
+            if k.lower() == n.lower():
+                return v
+    return None
 
 
 def _lhm_cpu_temp():

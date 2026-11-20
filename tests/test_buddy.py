@@ -466,6 +466,24 @@ def test_trofeo_pieces():
         pass
 
 
+def test_afterburner_readings():
+    import struct as st
+    from buddy_pc import trofeo
+    entries = [("CPU temperature", 44.0), ("CPU usage", 6.0), ("GPU temperature", 51.0), ("GPU usage", 12.0)]
+    header, entry = 32, 1324
+    buf = bytearray(header + entry * len(entries))
+    st.pack_into("<5I", buf, 0, 0x4D41484D, 0x00020000, header, len(entries), entry)
+    for i, (name, value) in enumerate(entries):
+        at = header + i * entry
+        buf[at:at + len(name)] = name.encode()
+        st.pack_into("<f", buf, at + 1300, value)
+    r = trofeo.parse_afterburner(bytes(buf))
+    assert r == {"CPU temperature": 44.0, "CPU usage": 6.0, "GPU temperature": 51.0, "GPU usage": 12.0}
+    assert trofeo.pick(r, "cpu temperature") == 44.0 and trofeo.pick(r, "nothing") is None
+    st.pack_into("<I", buf, 0, 0xDEAD)  # Afterburner closed
+    assert trofeo.parse_afterburner(bytes(buf)) == {}
+
+
 def test_trofeo_shows_the_face():
     import sys as _sys
     import types as _types

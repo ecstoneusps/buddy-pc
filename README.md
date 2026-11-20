@@ -86,10 +86,13 @@ His face can also show on a Thermalright **Trofeo Vision 9.16"** screen (USB
 `0416:5408`), with the time and date and the CPU and GPU readings (the boxes
 take his mood's colour): set `trofeo_screen = on` in `buddy.ini`
 (`trofeo_orientation = portrait` for a screen standing up, `landscape` lying
-down). The GPU readings come from NVIDIA's driver; Windows doesn't give out
-the CPU temperature, so it shows the CPU's load instead, unless
+down). The readings come from **MSI Afterburner** when it's running (the
+same ones RivaTuner shows: turn on the CPU temperature, CPU usage, CPU clock,
+GPU temperature and GPU usage graphs in its monitoring settings). Without it,
+the GPU readings come from NVIDIA's driver and the CPU's load stands in for
+its temperature (or
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
-is running with its remote web server on (port 8085). Close Thermalright's
+with its remote web server on, port 8085, gives the temperature). Close Thermalright's
 TRCC app first (also from the tray): only one program can use the screen at a
 time. If he's upside down, set `trofeo_rotate` to `0` or `180`. If the screen
 isn't there or is busy, he keeps trying every few seconds and the window works
