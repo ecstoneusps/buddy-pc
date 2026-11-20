@@ -160,6 +160,23 @@ class Speaker:
         threading.Thread(target=self._synth_loop, daemon=True, name="tts").start()
         threading.Thread(target=self._play_loop, daemon=True, name="play").start()
 
+    def chime(self):
+        """A short rising two-note "I'm listening", at his volume, finished before
+        he starts listening (so he doesn't hear it as you)."""
+        try:
+            import sounddevice as sd
+            rate = 24000
+            notes = []
+            for f, ms in ((880, 70), (1320, 110)):
+                t = np.arange(int(rate * ms / 1000)) / rate
+                env = np.minimum(1.0, np.minimum(t, t[::-1]) * 200)  # 5 ms fade in and out: no clicks
+                notes.append(np.sin(2 * np.pi * f * t) * env)
+            wave = np.concatenate(notes) * 0.35 * min(2.0, self.cfg["volume"] / 100.0)
+            sd.play(np.clip(wave * 32767, -32768, 32767).astype(np.int16), rate,
+                    device=self._speaker_device(), blocking=True)
+        except Exception as e:  # noqa: BLE001 (no chime then)
+            self.log(f"(no chime: {e})", debug=True)
+
     def say(self, text):
         if text.strip():
             self._done.clear()

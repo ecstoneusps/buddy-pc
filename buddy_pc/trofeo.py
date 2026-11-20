@@ -374,12 +374,22 @@ class Layout:
     at the top, his face in the middle, the vitals below. Landscape: the face
     in the middle, the time and vitals at the sides."""
 
-    def __init__(self, face, stats, portrait=True):
+    def __init__(self, face, stats, portrait=True, state=lambda: "idle"):
         from PIL import Image
-        self.face, self.stats, self.portrait = face, stats, portrait
+        self.face, self.stats, self.portrait, self.state = face, stats, portrait, state
         self.size = (HEIGHT, WIDTH) if portrait else (WIDTH, HEIGHT)
         self.back = Image.new("RGB", self.size, (0, 0, 0))
         self.f_big, self.f_mid, self.f_small = _font(92, True), _font(46, True), _font(36)
+
+    def _status(self):
+        """The bottom line: what he's doing, else the game's frame rate, else his name."""
+        st = self.state()
+        if st == "listening":
+            return "Listening..."
+        if st == "thinking":
+            return "Thinking..."
+        fps = self.stats.fps
+        return "Buddy" if fps is None else f"{fps:.0f} FPS"
 
     def _accent(self):
         p = self.face.cur  # his eye colour: the screen's colours follow his mood
@@ -421,9 +431,7 @@ class Layout:
             img.paste(self.face.render(w, 640), (0, 200))
             self._box(d, (24, 880, w - 24, 1250), cpu_t, cpu_big, cpu_small, accent)
             self._box(d, (24, 1290, w - 24, 1660), gpu_t, gpu_big, gpu_small, accent)
-            fps = self.stats.fps
-            d.text((w // 2, 1760), "Buddy" if fps is None else f"{fps:.0f} FPS", font=self.f_mid, fill=accent,
-                   anchor="mm")
+            d.text((w // 2, 1760), self._status(), font=self.f_mid, fill=accent, anchor="mm")
         else:
             fw = HEIGHT * 4 // 3
             img.paste(self.face.render(fw, HEIGHT), ((WIDTH - fw) // 2, 0))
@@ -436,13 +444,13 @@ class Layout:
         return img
 
 
-def run(face, cfg, log, stop=None):
+def run(face, cfg, log, stop=None, state=lambda: "idle"):
     """Keeps the screen showing the face (a thread). Reconnects if the screen
     goes away (unplugged, or TRCC took it)."""
     stop = stop or threading.Event()
     fps = max(2, min(30, cfg.get("trofeo_fps", 20)))
     portrait = cfg.get("trofeo_orientation", "portrait") != "landscape"
-    layout = Layout(face, Stats(log), portrait)
+    layout = Layout(face, Stats(log), portrait, state)
     screen, warned = None, False
     shown, t_report = 0, time.time()
     while not stop.is_set():

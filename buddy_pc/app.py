@@ -255,13 +255,15 @@ class Buddy:
             if with_wake:
                 pcm, first = first, None
             else:
+                if not follow_up and self.cfg.get("chime", True):
+                    self.speaker.chime()  # "I'm listening" (heard over the room, like the desk Buddy's chirp)
                 self.mic.drain()
                 self.endpoint.start_window = 5.0 if follow_up else 6.0
                 # After he talks, the first moments are the echo of his own voice.
                 # A follow-up must be about as loud as you were just now
                 # (within 10 dB): quieter voices are a fan, the TV, his echo.
                 pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set,
-                                           ignore_first=0.7 if follow_up else 0,
+                                           ignore_first=0.7 if follow_up else 0.25,
                                            min_db=your_level - 10 if follow_up and your_level else -120.0)
             if pcm is None or self.cancel.is_set():
                 if follow_up:
@@ -569,7 +571,8 @@ def main():
 
     if cfg["trofeo"]:
         from . import trofeo
-        threading.Thread(target=trofeo.run, args=(face, cfg, log), daemon=True, name="trofeo").start()
+        threading.Thread(target=trofeo.run, args=(face, cfg, log, None, lambda: buddy.state), daemon=True,
+                         name="trofeo").start()
 
     # The window: hidden while he's on the Trofeo screen (window = auto), and
     # closing it then only hides it; he keeps running there.

@@ -572,7 +572,10 @@ def test_trofeo_shows_the_face():
 
 class FakeSpeaker:
     def __init__(self):
-        self.said, self.level, self.busy = [], 0.0, False
+        self.said, self.level, self.busy, self.chimes = [], 0.0, False, 0
+
+    def chime(self):
+        self.chimes += 1
 
     def say(self, t):
         self.said.append(t)
