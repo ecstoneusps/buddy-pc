@@ -97,7 +97,9 @@ with its remote web server on, port 8085, gives the temperature). Close Thermalr
 TRCC app first (also from the tray): only one program can use the screen at a
 time. If he's upside down, set `trofeo_rotate` to `0` or `180`. If the screen
 isn't there or is busy, he keeps trying every few seconds and the window works
-as usual. How the screen is driven was worked out by the
+as usual. While he's on the screen, his window stays hidden (`window =
+auto`); closing it then only hides it, and closing the black console window
+quits him (`window = on` shows both). How the screen is driven was worked out by the
 [trcc-linux](https://github.com/Lexonight1/thermalright-trcc-linux) project.
 
 ## Personality

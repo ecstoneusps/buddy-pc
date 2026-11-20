@@ -486,7 +486,7 @@ def main():
     menu.add_checkbutton(label="Always on top", variable=on_top,
                          command=lambda: root.attributes("-topmost", on_top.get()))
     menu.add_separator()
-    menu.add_command(label="Quit", command=root.destroy)
+    menu.add_command(label="Quit Buddy", command=root.destroy)
     label.bind("<Button-1>", lambda e: buddy.on_click())
     label.bind("<Button-3>", lambda e: menu.tk_popup(e.x_root, e.y_root))
     root.bind("<space>", lambda e: buddy.on_click())
@@ -501,6 +501,9 @@ def main():
         face.set_expression(buddy.expression())
         face.set_talk_level(buddy.talk_level())
         face.update(dt_ms)
+        if hidden[0]:  # only on the Trofeo screen: nothing to draw here
+            root.after(33, frame)
+            return
         width = max(160, label.winfo_width())
         height = max(120, label.winfo_height())
         photo[0] = ImageTk.PhotoImage(face.render(width, height))
@@ -510,6 +513,23 @@ def main():
     if cfg["trofeo"]:
         from . import trofeo
         threading.Thread(target=trofeo.run, args=(face, cfg, log), daemon=True, name="trofeo").start()
+
+    # The window: hidden while he's on the Trofeo screen (window = auto), and
+    # closing it then only hides it; he keeps running there.
+    hidden = [cfg["window"] == "off" or (cfg["window"] == "auto" and cfg["trofeo"])]
+    if hidden[0]:
+        root.withdraw()
+        log("no window: he's on the Trofeo screen (close this console window to quit him)")
+
+    def close():
+        if cfg["trofeo"]:
+            root.withdraw()
+            hidden[0] = True
+            log("window closed: he keeps running on the Trofeo screen (close this console window to quit him)")
+        else:
+            root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", close)
 
     root.after(50, frame)
     root.mainloop()
