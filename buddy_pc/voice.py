@@ -2,6 +2,7 @@
 Assistant uses), played through the PC's speakers with the mouth following
 the sound."""
 
+import fnmatch
 import json
 import queue
 import socket
@@ -130,8 +131,15 @@ class Ducker:
     does), and back up afterwards. Windows only (its per-app volumes, the
     Volume Mixer's sliders)."""
 
-    def __init__(self, level, log):
+    # Programs that every sound on the PC goes through (his voice too), so they
+    # must never be turned down: audio enhancers and virtual mixers.
+    PASS_THROUGH = ("fxsound*.exe", "voicemeeter*.exe", "vb-audio*", "steelseriessonar*", "sonar*.exe",
+                    "nahimic*", "audiodg.exe", "equalizerapo*", "peace*.exe", "boom3d*", "dolby*", "dts*",
+                    "nvbroadcast*", "nvidia broadcast*", "wavesmaxx*", "soundswitch*")
+
+    def __init__(self, level, log, skip=()):
         self.level, self.log = level, log  # 0..1 of their volume while he talks; 1 = off
+        self.skip = [p.lower() for p in (*self.PASS_THROUGH, *skip)]
         self.saved = {}  # session -> volume it had
         self.told = False
         self.ok = level < 1.0
@@ -153,7 +161,10 @@ class Ducker:
                 p = s.Process
                 if p is None:
                     continue  # system sounds
-                if p.pid in mine or p.name().lower().startswith("python"):
+                name = p.name().lower()
+                if any(fnmatch.fnmatch(name, pat) for pat in self.skip):
+                    continue  # all sound goes through it (his too): turning it down turns him down
+                if p.pid in mine or name.startswith("python"):
                     # Himself: always at full volume in Windows' mixer (it remembers
                     # an app's level between runs, and his once got stuck at 1%).
                     if s.SimpleAudioVolume.GetMasterVolume() < 0.99:
@@ -271,7 +282,7 @@ class Speaker:
     def _play_loop(self):
         import sounddevice as sd
         out, out_rate = None, None
-        ducker = Ducker(self.cfg.get("duck_others", 40) / 100.0, self.log)
+        ducker = Ducker(self.cfg.get("duck_others", 40) / 100.0, self.log, self.cfg.get("duck_skip", ()))
         while True:
             item = self._audio.get()
             if item is None:  # end of a reply (or stopped)

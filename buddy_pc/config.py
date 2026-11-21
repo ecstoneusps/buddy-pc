@@ -54,6 +54,8 @@ def load(path=CONFIG_FILE):
         "volume": max(0, min(300, int(g("volume", "100")))),
         # Other apps' volume while he talks, in % of what it was (100 = leave them)
         "duck_others": max(0, min(100, int(g("duck_others", "40")))),
+        # More programs never to turn down (e.g. one all sound goes through), comma-separated
+        "duck_skip": [x.strip() for x in g("duck_skip", "").split(",") if x.strip()],
         "chime": _on(g("chime", "on")),  # a short chime when he starts listening
         # Home Assistant's MQTT broker: memory notes shared with the desk Buddy
         "mqtt_host": g("mqtt_host", ""),

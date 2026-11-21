@@ -227,11 +227,14 @@ class Buddy:
                 t0 = time.time()
                 audio = np.concatenate(seg)
                 # Much quieter than you usually are: a video, the next room.
-                if loudest_db(audio) < self.your_level - 14:
-                    woke, text = False, "(too quiet to be for me)"
+                loud = loudest_db(audio)
+                if loud < self.your_level - 14:
+                    woke, text = False, None
+                    log(f"(not for me: too quiet, {loud:.0f} dB; you're usually about {self.your_level:.0f} dB)")
                 else:
                     woke, text = self.wake.check(audio)
-                log(f"(wake check: \"{text}\", {time.time() - t0:.2f} s)", debug=True)
+                    if not woke:
+                        log(f"(not for me: heard \"{text}\", {loud:.0f} dB, {time.time() - t0:.2f} s)")
                 if woke:
                     log("wake word: listening")
                     if quiet > 0.5 and length < 1.6:
