@@ -11,8 +11,13 @@ LINES = {
 }
 
 
+LAST = {"decision": None, "score": None}  # the latest result, with its score
+
+
 def identify(cfg, pcm, log):
-    """'owner', 'other', 'unsure', or None (off, not set up or not reachable)."""
+    """'owner', 'other', 'unsure', or None (off, not set up or not reachable).
+    The score goes in LAST too."""
+    LAST.update(decision=None, score=None)
     url = cfg.get("voice_id_url")
     if not url or len(pcm) < 16000 * 1.2:  # too short to tell
         return None
@@ -27,6 +32,7 @@ def identify(cfg, pcm, log):
     if not d.get("enrolled"):
         return None
     log(f"voice: {d.get('decision')} (score {d.get('score', 0):.2f}, {d.get('seconds', 0):.1f} s)")
+    LAST.update(decision=d.get("decision"), score=d.get("score"))
     return d.get("decision")
 
 

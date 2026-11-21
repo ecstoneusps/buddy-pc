@@ -45,6 +45,8 @@ def load(path=CONFIG_FILE):
         "wake_word": g("wake_word", "hey_jarvis"),  # an openWakeWord model name or .onnx file; off = click only
         "wake_threshold": float(g("wake_threshold", "0.5")),
         "follow_up": _on(g("follow_up", "on")),
+        # Follow-ups (no "Hey Buddy") only from your voice (needs voice ID)
+        "follow_up_only_you": _on(g("follow_up_only_you", "on")),
         "mic": g("microphone", ""),        # part of the device name, or empty for Windows' default
         "speaker": g("speaker", ""),
         # Voice

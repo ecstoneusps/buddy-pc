@@ -44,6 +44,8 @@ def test_cancel_and_clarify():
     for yes in ("Cancel.", "Cancer.", "Never mind", "Hey Buddy, cancel", "I wasn't talking to you.",
                 "No, that was YouTube."):
         assert T.is_cancel(yes), yes
+    assert T.is_cancel("Cancel. What do you want me to say?")
+    assert T.is_cancel("Never mind, it's fine, go for the jug")
     for no in ("Tell me about cancer.", "forget it", "Who was the first person on the moon?"):
         assert not T.is_cancel(no), no
     assert T.is_clarify("I'm not sure I caught that part. Could you say it again?")
@@ -602,7 +604,10 @@ class FakeSpeaker:
 
 
 def _fake_buddy(replies, heard):
+    import tempfile
+    from buddy_pc import jokes
     from buddy_pc.app import Buddy
+    jokes.FILE = os.path.join(tempfile.mkdtemp(), "jokes.json")  # not the real one
 
     b = Buddy.__new__(Buddy)
     b.echo_wait = 0
@@ -757,6 +762,32 @@ def test_false_wake_is_dropped():
     b.wake = type("W", (), {"phrase": "hey buddy"})()
     b._conversation(np.zeros(16000, np.int16))
     assert b.speaker.said == []
+
+
+def test_jokes_differ():
+    import tempfile
+    from unittest import mock
+    from buddy_pc import jokes
+    with mock.patch.object(jokes, "FILE", os.path.join(tempfile.mkdtemp(), "j.json")):
+        assert jokes.wanted("Hey Buddy, tell me a joke.") and not jokes.wanted("what's the weather?")
+        jokes.told("Why don't skeletons fight? No guts!")
+        h = jokes.hint("pirates")
+        assert "about pirates" in h and "Why don't skeletons fight? No guts!" in h
+
+
+def test_follow_up_from_a_video_is_ignored():
+    from unittest import mock
+    from buddy_pc import voiceid
+    b = _fake_buddy([["[happy] Ha!"], ["[happy] Sure!"]], ["tell me a joke", "now we're even a conversation"])
+    b.cfg["voice_id_url"] = "http://x"
+
+    def ident(cfg, pcm, log):
+        voiceid.LAST.update(decision="other", score=0.1)
+        return "other"
+
+    with mock.patch.object(voiceid, "identify", ident):
+        b._conversation()
+    assert b.speaker.said == ["Ha!"]  # the video's "follow-up" got no answer
 
 
 def test_conversation_cancel_and_clarify_end_it():

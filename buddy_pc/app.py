@@ -9,7 +9,7 @@ import time
 import traceback
 
 from . import config as config_mod
-from . import memory, tools, voiceid
+from . import jokes, memory, tools, voiceid
 from .face import Face, expression_for
 from .hearing import loudest_db, strip_phrase
 from .textutil import is_vision_request
@@ -306,6 +306,14 @@ class Buddy:
             if is_cancel(heard):
                 log("-> cancelled")
                 return
+            # A follow-up has to be you: a video talking at the same loudness
+            # scores clearly as someone else. (Guests say "Hey Buddy" each time.)
+            if follow_up and self.cfg.get("follow_up_only_you", True):
+                vid.join(3)
+                score = voiceid.LAST.get("score")
+                if who[0] == "other" and score is not None and score < 0.2:
+                    log(f"-> not your voice (score {score:.2f}): a video or someone else; not answering")
+                    return
             # The same thing again straight after: an echo (or Whisper imagining it), not you.
             if follow_up and normalize(heard) == normalize(last_heard):
                 log("-> heard the same thing again; that's an echo, not you")
@@ -338,7 +346,12 @@ class Buddy:
                     extra += (f"[You just looked through your camera. {seen} Answer from that alone; if it "
                               "doesn't show what was asked, say you can't quite tell.]\n")
                     looked = True
+                joke = jokes.wanted(heard)
+                if joke:
+                    extra += jokes.hint()
                 spoken, cancelled = self._answer(heard, extra=extra, looked=looked)
+                if joke and spoken:
+                    jokes.told(spoken)
             if cancelled or not self.cfg["follow_up"]:
                 return
             if is_clarify(spoken):

@@ -103,6 +103,10 @@ def is_cancel(heard):
             h = h[: -len(tail)]
     if h in _CANCEL_WHOLE:
         return True
+    # Starting with it ("Cancel. What do you want me to say?" -- the rest was
+    # a video talking over you).
+    if any(h.startswith(p + " ") for p in ("cancel", "never mind", "nevermind", "stop listening")):
+        return True
     if len(h.split()) > 10:
         return False
     s = " " + h + " "
