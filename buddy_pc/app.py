@@ -99,11 +99,15 @@ class Buddy:
         self.state = "idle"
         while True:
             try:
-                self._conversation(self._idle_until_called())
+                first = self._idle_until_called()
+                self.speaker.ducks.hold("conversation", True)  # quieter, so he can hear you
+                self._conversation(first)
             except Exception:  # noqa: BLE001 (keep going after anything unexpected)
                 traceback.print_exc()
                 self.state = "idle"
                 time.sleep(1)
+            finally:
+                self.speaker.ducks.hold("conversation", False)
 
     def _start(self):
         from .brain import Brain
@@ -204,13 +208,15 @@ class Buddy:
         return True
 
     def _idle_phrase(self):
-        """Wake word by phrase: each time someone starts talking, the tiny
-        Whisper model checks the first moments for "hey buddy". If you carry
-        on talking, that's the question."""
+        """Wake word by phrase: while someone is talking, the tiny Whisper model
+        checks the latest couple of seconds for "hey buddy", again every second
+        (a video can talk nonstop, and you may say it in the middle). If you
+        carry on talking, that's the question."""
         import numpy as np
+        window = 28  # frames: 2.2 s
         seg, pre = [], []
-        last_voice = 0.0
-        checked = woke = False
+        last_voice = last_check = 0.0
+        woke = False
         while True:
             if self.click.is_set():
                 log("click: listening")
@@ -226,10 +232,11 @@ class Buddy:
                 seg = []
                 continue  # don't hear himself
             now = time.time()
-            voice = self.endpoint.is_speech(frame)
+            # Once woken (other apps turned down), only you count as talking.
+            voice = self.endpoint.is_speech(frame, self.your_level - 10 if woke else -120.0)
             if not seg:
                 if voice:
-                    seg, last_voice, checked, woke = pre + [frame], now, False, False
+                    seg, last_voice, last_check, woke = pre + [frame], now, now, False
                 else:
                     self.endpoint.learn(frame)
                     pre = (pre + [frame])[-3:]
@@ -238,29 +245,35 @@ class Buddy:
             if voice:
                 last_voice = now
             quiet = now - last_voice
-            length = len(seg) * 0.08
-            if not checked and (quiet > 0.5 or length >= 2.5):
-                checked = True
-                t0 = time.time()
-                audio = np.concatenate(seg)
-                # Much quieter than you usually are: a video, the next room.
-                loud = loudest_db(audio)
-                if loud < self.your_level - 14:
-                    woke, text = False, None
-                    log(f"(not for me: too quiet, {loud:.0f} dB; you're usually about {self.your_level:.0f} dB)")
-                else:
-                    woke, text = self.wake.check(audio)
-                    if not woke:
-                        log(f"(not for me: heard \"{text}\", {loud:.0f} dB, {time.time() - t0:.2f} s)")
-                if woke:
-                    log("wake word: listening")
-                    if quiet > 0.5 and length < 1.6:
-                        return None  # just "Hey Buddy": now listen for the question
-            if checked and not woke:
-                if quiet > 0.5:
-                    seg = []  # someone talking, but not to him
+            if not woke:
+                length = len(seg) * 0.08
+                due = quiet > 0.5 or (length >= 2.0 and now - last_check >= 1.0)
+                if due:
+                    last_check = now
+                    start = max(0, len(seg) - window)
+                    audio = np.concatenate(seg[start:])
+                    t0 = time.time()
+                    loud = loudest_db(audio)
+                    # Much quieter than you usually are: a video, the next room.
+                    if loud < self.your_level - 14:
+                        log(f"(not for me: too quiet, {loud:.0f} dB; you're usually about {self.your_level:.0f} dB)")
+                    else:
+                        woke, text = self.wake.check(audio)
+                        if not woke:
+                            log(f"(not for me: heard \"{text}\", {loud:.0f} dB, {time.time() - t0:.2f} s)")
+                    if woke:
+                        log("wake word: listening")
+                        self.speaker.ducks.hold("conversation", True)  # quieter, so he can hear you
+                        if quiet > 0.5 and len(seg) - start <= 20:
+                            return None  # just "Hey Buddy": now listen for the question
+                        seg = seg[start:]  # from "Hey Buddy" on (not the video before it)
+                        continue
+                    if quiet > 0.5:
+                        seg = []  # someone talking, but not to him
+                    elif len(seg) > 60:
+                        seg = seg[-window:]  # keep only what the next check needs
                 continue
-            if woke and (quiet > 0.9 or length > 20):
+            if quiet > 0.9 or len(seg) * 0.08 > 20:
                 return np.concatenate(seg)  # "Hey Buddy, ..." and the question in one go
 
     def _conversation(self, first=None):
@@ -284,7 +297,8 @@ class Buddy:
                 # (within 10 dB): quieter voices are a fan, the TV, his echo.
                 pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set,
                                            ignore_first=0.7 if follow_up else 0.25,
-                                           min_db=your_level - 10 if follow_up and your_level else -120.0)
+                                           min_db=(your_level - 10 if follow_up and your_level
+                                                   else self.your_level - 12))
             if pcm is None or self.cancel.is_set():
                 if follow_up:
                     log("no follow-up")

@@ -586,6 +586,7 @@ def test_trofeo_shows_the_face():
 class FakeSpeaker:
     def __init__(self):
         self.said, self.level, self.busy, self.chimes = [], 0.0, False, 0
+        self.ducks = type("D", (), {"hold": lambda self, why, on: None})()
 
     def chime(self):
         self.chimes += 1
@@ -788,6 +789,39 @@ def test_follow_up_from_a_video_is_ignored():
     with mock.patch.object(voiceid, "identify", ident):
         b._conversation()
     assert b.speaker.said == ["Ha!"]  # the video's "follow-up" got no answer
+
+
+def test_hey_buddy_in_the_middle_of_a_video():
+    from buddy_pc.app import Buddy
+    from buddy_pc.hearing import Endpointer
+    even = lambda f: (f & ~1).astype(np.int16)
+    video = [even(_tone(-20)) for _ in range(75)]                 # 6 s of nonstop talk (even samples)
+    hey = [even(_tone(-18)) | 1 for _ in range(12)]               # "Hey Buddy" (marked: odd samples)
+    after = [even(_tone(-34)) for _ in range(10)] + [even(_tone(-70)) for _ in range(20)]  # video turned down
+    b = Buddy.__new__(Buddy)
+    b.cfg = {}
+    b.click, b.cancel = threading.Event(), threading.Event()
+    b.speaker = FakeSpeaker()
+    b.remarks = __import__("queue").Queue()
+    b.mic = FakeMic(video + hey + after)
+    b.endpoint = Endpointer()
+    checks = []
+
+    class Wake:
+        phrase = "hey buddy"
+
+        def check(self, audio):
+            checks.append(len(audio))
+            return bool(np.any(audio % 2)), "hey buddy" if np.any(audio % 2) else "video talk"
+
+        def reset(self):
+            pass
+
+    b.wake = Wake()
+    pcm = b._idle_phrase()
+    assert len(checks) >= 4                     # kept checking while the video talked
+    assert pcm is not None and np.any(pcm % 2)  # caught it, and kept the "Hey Buddy" part
+    assert len(pcm) < 60 * 1280                 # without most of the video from before it
 
 
 def test_conversation_cancel_and_clarify_end_it():

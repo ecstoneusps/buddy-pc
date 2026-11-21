@@ -193,6 +193,32 @@ class Ducker:
         self.saved = {}
 
 
+class Ducks:
+    """Other apps turned down while any reason holds (he's listening to you,
+    he's talking), on a thread of its own (Windows' volume controls want
+    every call from the same thread)."""
+
+    def __init__(self, level, log, skip=()):
+        self.level, self.log, self.skip = level, log, skip
+        self._q = queue.Queue()
+        if level < 1.0:
+            threading.Thread(target=self._loop, daemon=True, name="ducks").start()
+
+    def hold(self, why, on):
+        self._q.put((why, on))
+
+    def _loop(self):
+        ducker = Ducker(self.level, self.log, self.skip)
+        holds = set()
+        while True:
+            why, on = self._q.get()
+            (holds.add if on else holds.discard)(why)
+            if holds:
+                self.ducks.hold("talking", True)
+            else:
+                ducker.restore()
+
+
 class Speaker:
     """Plays sentences one after another (each is synthesized while the one
     before it plays). say() queues one; end() marks the end of a reply."""
@@ -202,6 +228,7 @@ class Speaker:
         self.log = log
         self.level = 0.0          # for the mouth
         self.told_level = False
+        self.ducks = Ducks(cfg.get("duck_others", 40) / 100.0, log, cfg.get("duck_skip", ()))
         self.busy = False         # something queued or playing
         self._texts = queue.Queue()
         self._audio = queue.Queue(maxsize=3)
@@ -282,13 +309,12 @@ class Speaker:
     def _play_loop(self):
         import sounddevice as sd
         out, out_rate = None, None
-        ducker = Ducker(self.cfg.get("duck_others", 40) / 100.0, self.log, self.cfg.get("duck_skip", ()))
         while True:
             item = self._audio.get()
             if item is None:  # end of a reply (or stopped)
                 self.level = 0.0
                 if self._texts.empty() and self._audio.empty():
-                    ducker.restore()
+                    self.ducks.hold("talking", False)
                     if out is not None:  # let the last bit play out, then close
                         try:
                             out.stop()
