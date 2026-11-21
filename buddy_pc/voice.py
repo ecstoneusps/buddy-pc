@@ -214,7 +214,7 @@ class Ducks:
             why, on = self._q.get()
             (holds.add if on else holds.discard)(why)
             if holds:
-                self.ducks.hold("talking", True)
+                ducker.duck()
             else:
                 ducker.restore()
 
@@ -348,7 +348,7 @@ class Speaker:
                     out_rate = rate
                 # (After his sound has started, so Windows lists him too and his
                 # own level can be checked; once per reply.)
-                ducker.duck()
+                self.ducks.hold("talking", True)
                 for i in range(0, len(pcm), block):
                     if self._stop.is_set():
                         out.abort()

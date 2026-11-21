@@ -48,6 +48,7 @@ class Buddy:
     echo_wait = 0.4  # seconds after he talks before listening again
     max_follow_ups = 3  # then the wake word again (so a TV can't keep him going)
     your_level = -24.0  # how loud you usually are (dB), learned as you talk to him
+    woke_midstream = False  # caught "Hey Buddy" in the middle of other talk
     wake = None
 
     def __init__(self, cfg):
@@ -213,6 +214,7 @@ class Buddy:
         (a video can talk nonstop, and you may say it in the middle). If you
         carry on talking, that's the question."""
         import numpy as np
+        self.woke_midstream = False
         window = 28  # frames: 2.2 s
         seg, pre = [], []
         last_voice = last_check = 0.0
@@ -267,6 +269,7 @@ class Buddy:
                         if quiet > 0.5 and len(seg) - start <= 20:
                             return None  # just "Hey Buddy": now listen for the question
                         seg = seg[start:]  # from "Hey Buddy" on (not the video before it)
+                        self.woke_midstream = True  # (the careful transcription may miss the phrase)
                         continue
                     if quiet > 0.5:
                         seg = []  # someone talking, but not to him
@@ -324,7 +327,7 @@ class Buddy:
                 return
             if self.wake is not None and hasattr(self.wake, "phrase") and not follow_up:
                 rest = strip_phrase(self.wake.phrase, heard)
-                if with_wake and rest == heard:
+                if with_wake and rest == heard and not self.woke_midstream:
                     # The quick check thought it heard "Hey Buddy", the careful one
                     # didn't: not for him after all.
                     log("-> no \"hey buddy\" in that after all; going back to waiting")

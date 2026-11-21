@@ -237,6 +237,60 @@ def test_quiet_speech_is_brought_up():
     assert abs(voice.rms_db(loud) - voice.TARGET_DB) < 1.5 and np.abs(loud).max() <= 30000
 
 
+def test_speaker_plays_and_ducks_other_apps():
+    import sys as _sys
+    import types as _types
+    from unittest import mock
+    played, events, logs = [], [], []
+
+    class Out:
+        def __init__(self, **k):
+            pass
+
+        def start(self):
+            pass
+
+        def write(self, chunk):
+            played.append(len(chunk))
+
+        def stop(self):
+            pass
+
+        def close(self):
+            pass
+
+        def abort(self):
+            pass
+
+    sd = _types.ModuleType("sounddevice")
+    sd.OutputStream = Out
+
+    class FakeDucker:
+        def __init__(self, *a, **k):
+            pass
+
+        def duck(self):
+            events.append("duck")
+
+        def restore(self):
+            events.append("restore")
+
+    t = np.arange(24000) / 24000
+    speech = (np.sin(2 * np.pi * 200 * t) * 3000).astype(np.int16)
+    with mock.patch.dict(_sys.modules, {"sounddevice": sd}), \
+            mock.patch.object(voice, "synthesize", lambda *a, **k: (24000, speech)), \
+            mock.patch.object(voice, "Ducker", FakeDucker):
+        sp = voice.Speaker({"kokoro_host": "x", "kokoro_port": 1, "voice": "v", "volume": 100, "speaker": "",
+                            "duck_others": 40}, lambda m, **k: logs.append(m))
+        sp.say("Hello there, Eric!")
+        sp.end()
+        assert sp.wait(5)
+        time.sleep(0.3)
+    assert sum(played) >= 24000 * 0.9                      # it played
+    assert not any("couldn't play" in m for m in logs), logs
+    assert events[:1] == ["duck"] and events[-1] == "restore"  # turned the others down, then back up
+
+
 def test_level_of():
     assert voice.level_of(np.zeros(320, dtype=np.int16)) == 0.0
     assert voice.level_of(_tone(-12, 320)) > 0.9
