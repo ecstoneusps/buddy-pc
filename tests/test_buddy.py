@@ -578,6 +578,16 @@ def test_rivatuner_fps():
     assert trofeo.parse_rtss(bytes(buf), now_ms=10500) is None       # not RivaTuner's memory
 
 
+def test_finding_a_start_menu_shortcut():
+    import tempfile
+    from buddy_pc import trofeo
+    d = tempfile.mkdtemp()
+    for f in ("SignalRGB.lnk", "Uninstall SignalRGB.lnk"):
+        open(os.path.join(d, f), "w").close()
+    assert trofeo.find_shortcut(os.path.join(d, "SignalRgbLauncher.exe")) == os.path.join(d, "SignalRGB.lnk")
+    assert trofeo.find_shortcut(os.path.join(d, "Something.exe")) is None
+
+
 def test_trofeo_shows_the_face():
     import sys as _sys
     import types as _types

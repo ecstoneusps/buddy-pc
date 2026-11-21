@@ -456,6 +456,27 @@ class Layout:
         return img
 
 
+def find_shortcut(path):
+    """A Start menu shortcut for `path` when that exact file isn't there:
+    "…\\SignalRgbLauncher.exe" can be "SignalRgbLauncher.exe.lnk", or a
+    shortcut with a similar name in the same folder ("SignalRGB.lnk")."""
+    import os
+    import re
+    for alt in (path + ".lnk", os.path.splitext(path)[0] + ".lnk"):
+        if os.path.exists(alt):
+            return alt
+    folder = os.path.dirname(path)
+    if not os.path.isdir(folder):
+        return None
+    key = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
+    want = key(os.path.splitext(os.path.basename(path))[0]).replace("launcher", "")
+    for f in sorted(os.listdir(folder)):
+        stem = key(os.path.splitext(f)[0])
+        if f.lower().endswith((".lnk", ".exe")) and stem and (stem in want or want in stem):
+            return os.path.join(folder, f)
+    return None
+
+
 def start_after(path, log):
     """Starts a program once he has the screen (SignalRGB: it opens the screen
     at startup even while it's disabled there, and then he can't), unless
@@ -478,10 +499,7 @@ def start_after(path, log):
     # A Start menu entry is a shortcut: "…\\SignalRgbLauncher.exe" there is really
     # "SignalRgbLauncher.exe.lnk" (or ".lnk" in place of ".exe").
     if not os.path.exists(path):
-        for alt in (path + ".lnk", os.path.splitext(path)[0] + ".lnk"):
-            if os.path.exists(alt):
-                path = alt
-                break
+        path = find_shortcut(path) or path
     try:
         if path.lower().endswith(".lnk") and hasattr(os, "startfile"):
             os.startfile(path)  # opens a shortcut like double-clicking it
@@ -489,7 +507,11 @@ def start_after(path, log):
             subprocess.Popen([path], cwd=os.path.dirname(path) or None, close_fds=True)
         log(f"Trofeo screen: started {os.path.basename(path)} now that the screen is his")
     except OSError as e:
-        log(f"Trofeo screen: couldn't start {path} ({e}); check start_after_screen in buddy.ini")
+        there = ""
+        folder = os.path.dirname(path)
+        if os.path.isdir(folder):
+            there = f"; that folder has: {', '.join(sorted(os.listdir(folder))[:12])}"
+        log(f"Trofeo screen: couldn't start {path} ({e}){there}; check start_after_screen in buddy.ini")
 
 
 def run(face, cfg, log, stop=None, state=lambda: "idle"):
