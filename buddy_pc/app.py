@@ -115,8 +115,9 @@ class Buddy:
         self.brain = Brain(cfg, log)
         self.brain.shared.on_say = lambda text: self.remarks.put((time.time(), text))
         self.ears = Transcriber(cfg, log)
-        self.mic = Mic(cfg["mic"])
-        log(f"microphone: {self.mic.name}")
+        self.mic = self._open_mic(cfg["mic"])
+        log(f"microphone: {self.mic.name}" + ("" if cfg["mic"] else
+            " (Windows' default: set microphone = in buddy.ini to stick to one)"))
         self.endpoint = Endpointer(vad=voice_detector(log))
         self.wake = None
         if cfg["wake_word"].lower() not in ("", "off", "none"):
@@ -132,6 +133,22 @@ class Buddy:
             log("click my face to talk")
         # Warm up the chat model so the first answer isn't slow.
         threading.Thread(target=self._warm_up, daemon=True).start()
+
+    def _open_mic(self, name):
+        """The microphone named in buddy.ini. Right after Windows starts, a USB
+        webcam can take a while to appear: wait for it (up to 2 minutes)
+        rather than use some other microphone."""
+        from .hearing import Mic
+        for attempt in range(25):
+            try:
+                return Mic(name)
+            except Exception as e:  # noqa: BLE001
+                if not name or attempt == 24:
+                    raise
+                if attempt == 0:
+                    log(f"microphone \"{name}\" isn't there yet ({e}); waiting for it")
+                time.sleep(5)
+        raise RuntimeError("no microphone")
 
     def _warm_up(self):
         import requests
