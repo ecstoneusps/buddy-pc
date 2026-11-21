@@ -79,6 +79,31 @@ def level_of(chunk):
     return float(min(1.0, max(0.0, (db + 42.0) / 30.0)))
 
 
+TARGET_DB = -16.0  # how loud speech is played at volume 100 (dBFS, average while talking)
+
+
+def rms_db(pcm):
+    """Average loudness while talking (silences left out), in dBFS."""
+    x = pcm.astype(np.float32) / 32768.0
+    if len(x) == 0:
+        return -120.0
+    frames = x[: len(x) // 480 * 480].reshape(-1, 480) if len(x) >= 480 else x.reshape(1, -1)
+    levels = np.sqrt(np.mean(frames ** 2, axis=1))
+    loud = levels[levels > max(1e-4, levels.max() * 0.1)]  # the talking parts
+    r = float(np.sqrt(np.mean(loud ** 2))) if len(loud) else 0.0
+    return 20 * np.log10(r) if r > 1e-6 else -120.0
+
+
+def level_gain(pcm, volume=1.0, most=12.0):
+    """The gain that brings this speech to TARGET_DB (times `volume`), at most
+    `most`; and how loud it was before."""
+    before = rms_db(pcm)
+    if before <= -100:
+        return volume, before
+    gain = 10 ** ((TARGET_DB - before) / 20) * volume
+    return max(0.1, min(most, gain)), before
+
+
 def boost(pcm, gain, ceiling=30000.0):
     """Louder by `gain`, without clipping: a limiter turns the loudest parts
     down just enough (per 20 ms, ramped so it doesn't click) to stay under the
@@ -165,6 +190,7 @@ class Speaker:
         self.cfg = cfg
         self.log = log
         self.level = 0.0          # for the mouth
+        self.told_level = False
         self.busy = False         # something queued or playing
         self._texts = queue.Queue()
         self._audio = queue.Queue(maxsize=3)
@@ -266,9 +292,14 @@ class Speaker:
             if self._stop.is_set():
                 continue
             rate, pcm = item
-            vol = self.cfg["volume"] / 100.0
-            if vol != 1.0:
-                pcm = boost(pcm, vol)
+            # Every sentence brought to the same loudness (Kokoro's can come out
+            # quiet), then `volume` on top; the limiter keeps it from clipping.
+            gain, before = level_gain(pcm, self.cfg["volume"] / 100.0)
+            pcm = boost(pcm, gain)
+            if not self.told_level:
+                self.log(f"(his voice came at {before:.0f} dB average; played at about "
+                         f"{rms_db(pcm):.0f} dB, gain x{gain:.1f})")
+                self.told_level = True
             block = rate // 50  # 20 ms
             try:
                 if out is None or out_rate != rate:

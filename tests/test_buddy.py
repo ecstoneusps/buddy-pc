@@ -226,6 +226,15 @@ def test_boost_is_louder_without_clipping():
     assert np.array_equal(voice.boost(quiet, 1.0), quiet)
 
 
+def test_quiet_speech_is_brought_up():
+    t = np.arange(24000) / 24000
+    quiet = (np.sin(2 * np.pi * 220 * t) * 0.05 * 32767 * (t % 0.4 > 0.1)).astype(np.int16)  # about -29 dB
+    gain, before = voice.level_gain(quiet)
+    assert -31 < before < -27 and 3 < gain < 6
+    loud = voice.boost(quiet, gain)
+    assert abs(voice.rms_db(loud) - voice.TARGET_DB) < 1.5 and np.abs(loud).max() <= 30000
+
+
 def test_level_of():
     assert voice.level_of(np.zeros(320, dtype=np.int16)) == 0.0
     assert voice.level_of(_tone(-12, 320)) > 0.9
