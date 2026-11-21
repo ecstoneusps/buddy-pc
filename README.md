@@ -33,6 +33,15 @@ The desk Buddy lives in
   "how many fingers?") on his own when a question needs it.
 - While he's running, **Buddy's eyes' remarks** and thoughts come from him
   instead of the desk Buddy (he says them when he isn't in a conversation).
+- **While you talk to him, videos and music pause** (YouTube, Spotify: anything
+  Windows' play/pause key controls) and play again after; games and other
+  sounds are turned down instead.
+- He **hears what the PC itself plays**: if what the microphone heard is what
+  the PC just played (a video, a game, a call), it wasn't you, so he doesn't
+  answer it or wake to it.
+- He knows **which window is in front and what's playing**, and **looks at the
+  screen** when you ask ("what's this error?", "what's on my screen?"); the
+  screenshot only goes to Ollama on this PC.
 - With **voice ID** (`voice_id_url`, the desk Buddy's service), he knows
   whether it's you or a guest talking (the console shows `voice: owner (score ...)`).
   Say **"learn my voice"** to add three samples through the PC's microphone to

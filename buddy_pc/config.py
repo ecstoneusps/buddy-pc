@@ -61,6 +61,7 @@ def load(path=CONFIG_FILE):
         "chime": _on(g("chime", "on")),  # a short chime when he starts listening
         "pause_media": _on(g("pause_media", "on")),  # pause YouTube/Spotify while you talk to him
         "pc_awareness": _on(g("pc_awareness", "on")),  # the window in front, what's playing, the screen
+        "ignore_pc_audio": _on(g("ignore_pc_audio", "on")),  # what the PC plays isn't you
         # Home Assistant's MQTT broker: memory notes shared with the desk Buddy
         "mqtt_host": g("mqtt_host", ""),
         "mqtt_port": int(g("mqtt_port", "1883")),

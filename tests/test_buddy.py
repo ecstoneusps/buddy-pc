@@ -666,6 +666,7 @@ def _fake_buddy(replies, heard):
 
     b = Buddy.__new__(Buddy)
     b.echo_wait = 0
+    b._pc_said = lambda seconds: ""
     b.cfg = {"follow_up": True, "voice_id_url": ""}
     b.state, b.reply_expr, b.linger_until = "idle", "happy", 0.0
     b.click, b.cancel = threading.Event(), threading.Event()
@@ -965,6 +966,17 @@ def test_media_pauses_what_plays_and_resumes_it():
         assert m.now_playing() == '"Good Mythical Morning" (Microsoft Edge)'  # paused by him: still "playing"
         m.resume()
     assert calls == [("pause", "MSEdge"), ("play", "MSEdge")]  # Spotify was already paused: left alone
+
+
+def test_what_the_pc_played_isnt_you():
+    from buddy_pc.loopback import same_words
+    assert same_words("Oklahoma is in Oklahoma City or Tulsa", "is Oklahoma in Oklahoma City or is it Tulsa, Rhett")
+    assert not same_words("Hey Buddy, tell me a joke", "Oklahoma is in Oklahoma City or Tulsa")
+    assert not same_words("Hi", "Hi there")  # too short to tell
+    b = _fake_buddy([["[happy] It's Oklahoma City!"]], ["Oklahoma is in Oklahoma City or Tulsa"])
+    b._pc_said = lambda seconds: "is Oklahoma in Oklahoma City or is it Tulsa"
+    b._conversation()
+    assert b.speaker.said == []  # the video asked, not you
 
 
 def test_conversation_cancel_and_clarify_end_it():

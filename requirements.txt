@@ -21,3 +21,5 @@ pycaw; sys_platform == "win32"
 winrt-runtime; sys_platform == "win32"
 winrt-Windows.Foundation; sys_platform == "win32"
 winrt-Windows.Media.Control; sys_platform == "win32"
+# Hearing what the PC plays (to tell it apart from you)
+soundcard; sys_platform == "win32"

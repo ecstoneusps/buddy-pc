@@ -12,6 +12,7 @@ from . import config as config_mod
 from . import jokes, memory, pcinfo, tools, voiceid
 from .face import Face, expression_for
 from .hearing import loudest_db, match_phrase, strip_phrase
+from .loopback import same_words
 from .textutil import is_screen_request, is_vision_request
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
@@ -123,6 +124,10 @@ class Buddy:
         self.brain = Brain(cfg, log)
         from .media import Media
         self.media = Media(log)
+        self.loopback = None
+        if cfg.get("ignore_pc_audio", True):
+            from .loopback import Loopback
+            self.loopback = Loopback(log)
         self.brain.context = self._pc_context
         self.brain.shared.on_say = lambda text: self.remarks.put((time.time(), text))
         self.ears = Transcriber(cfg, log)
@@ -144,6 +149,24 @@ class Buddy:
             log("click my face to talk")
         # Warm up the chat model so the first answer isn't slow.
         threading.Thread(target=self._warm_up, daemon=True).start()
+
+    def _pc_said(self, seconds):
+        """What the PC itself played in the last `seconds` (a video, a game), as
+        text, or "" (nothing, or loopback not available)."""
+        import numpy as np
+        from .loopback import is_quiet
+        lb = getattr(self, "loopback", None)
+        if lb is None or not lb.ok:
+            return ""
+        pcm = lb.recent(seconds + 0.5)
+        if is_quiet(pcm):
+            return ""
+        model = getattr(self.wake, "model", None)  # the quick model: this is only a comparison
+        if model is None:
+            return self.ears.text(pcm)
+        segs, _ = model.transcribe(pcm.astype(np.float32) / 32768.0, language="en", beam_size=1,
+                                   condition_on_previous_text=False, without_timestamps=True, max_new_tokens=80)
+        return " ".join(s.text.strip() for s in segs).strip()
 
     def _pc_context(self):
         """What's going on on the PC, for his prompt (pc_awareness)."""
@@ -293,6 +316,11 @@ class Buddy:
                                 woke = False
                                 log(f"(not for me: quick check heard \"{text}\", careful check heard "
                                     f"\"{sure}\")")
+                            else:
+                                played = self._pc_said(len(audio) / 16000)
+                                if played and match_phrase(self.wake.phrase, played) >= 0:
+                                    woke = False
+                                    log(f"(not for me: the PC itself said it: \"{played}\")")
                     if woke:
                         log("wake word: listening")
                         self.speaker.ducks.hold("conversation", True)  # quieter, so he can hear you
@@ -369,6 +397,11 @@ class Buddy:
                 return
             if is_cancel(heard):
                 log("-> cancelled")
+                return
+            # What the PC just played, word for word? Then it wasn't you.
+            played = self._pc_said(len(pcm) / 16000)
+            if played and same_words(heard, played):
+                log(f"-> that was the PC playing (\"{played}\"), not you; not answering")
                 return
             # A follow-up has to be you: a video talking at the same loudness
             # scores clearly as someone else. (Guests say "Hey Buddy" each time.)
