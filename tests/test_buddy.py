@@ -909,6 +909,7 @@ def test_media_app_names():
     assert app_name("Microsoft.MicrosoftEdge.Stable_8wekyb3d8bbwe!App") == "Microsoft Edge"
     assert app_name("MSEdge") == "Microsoft Edge" and app_name("Spotify.exe") == "Spotify"
     assert app_name("Publisher.CoolPlayer_abc123!App") == "CoolPlayer"
+    assert app_name("com-54E21B02") == ""  # Edge's code for a site: no name
 
 
 def test_screen_questions_and_window_names():

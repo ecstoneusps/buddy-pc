@@ -45,16 +45,21 @@ class Media:
     def pause(self):
         """Pauses everything that's playing; remembers what, to resume it."""
         async def go():
-            paused = []
+            paused, names = [], []
             for s in await self._sessions():
-                if self._playing(s) and await s.try_pause_async():
-                    paused.append(s)
-            return paused
+                if self._playing(s):
+                    p = await s.try_get_media_properties_async()
+                    if await s.try_pause_async():
+                        paused.append(s)
+                        app = app_name(s.source_app_user_model_id)
+                        title = f"\"{p.title}\"" if p and p.title else ""
+                        names.append(" in ".join(x for x in (title, app) if x) or "something")
+            return paused, names
         got = self._run(go())
-        if got:
-            self.paused += got
-            self.log(f"(paused: {', '.join(app_name(s.source_app_user_model_id) for s in got)})")
-        return bool(got)
+        if got and got[0]:
+            self.paused += got[0]
+            self.log(f"(paused: {'; '.join(got[1])})")
+        return bool(got and got[0])
 
     def resume(self):
         """Plays again what he paused (and nothing else)."""
@@ -82,13 +87,17 @@ class Media:
                 p = await s.try_get_media_properties_async()
                 if p and p.title:
                     who = f" by {p.artist}" if p.artist else ""
-                    out.append(f"\"{p.title}\"{who} ({app_name(s.source_app_user_model_id)})")
+                    app = app_name(s.source_app_user_model_id)
+                    out.append(f"\"{p.title}\"{who}" + (f" ({app})" if app else ""))
             return "; ".join(out)
         return self._run(go()) or ""
 
 
 def app_name(aumid):
     """'MSEdge' / 'Spotify.exe' / 'Microsoft.ZuneMusic_8wekyb...!Microsoft.ZuneMusic' -> a readable name."""
+    import re
+    if re.fullmatch(r"(com-)?[0-9a-f]{6,}", (aumid or "").strip(), re.I):
+        return ""  # an internal code (Edge reports some sites like this): no name to give
     full = (aumid or "").lower()
     for key, name in (("edge", "Microsoft Edge"), ("chrome", "Chrome"), ("firefox", "Firefox"),
                       ("spotify", "Spotify"), ("zunemusic", "Media Player"), ("vlc", "VLC"),
