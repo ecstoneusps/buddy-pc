@@ -472,6 +472,8 @@ def find_shortcut(path):
     want = key(os.path.splitext(os.path.basename(path))[0]).replace("launcher", "")
     for f in sorted(os.listdir(folder)):
         stem = key(os.path.splitext(f)[0])
+        if "uninstall" in stem or "remove" in stem or "setup" in stem:
+            continue  # never start an uninstaller or installer
         if f.lower().endswith((".lnk", ".exe")) and stem and (stem in want or want in stem):
             return os.path.join(folder, f)
     return None

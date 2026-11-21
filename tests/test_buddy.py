@@ -586,6 +586,8 @@ def test_finding_a_start_menu_shortcut():
         open(os.path.join(d, f), "w").close()
     assert trofeo.find_shortcut(os.path.join(d, "SignalRgbLauncher.exe")) == os.path.join(d, "SignalRGB.lnk")
     assert trofeo.find_shortcut(os.path.join(d, "Something.exe")) is None
+    os.remove(os.path.join(d, "SignalRGB.lnk"))
+    assert trofeo.find_shortcut(os.path.join(d, "SignalRgbLauncher.exe")) is None  # never the uninstaller
 
 
 def test_trofeo_shows_the_face():
