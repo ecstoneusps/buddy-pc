@@ -578,6 +578,13 @@ def test_rivatuner_fps():
     assert trofeo.parse_rtss(bytes(buf), now_ms=10500) is None       # not RivaTuner's memory
 
 
+def test_start_after_screen_with_options():
+    from buddy_pc import trofeo
+    assert trofeo.split_command(r'"C:\\A B\\SignalRgbLauncher.exe" --silent') == (r"C:\\A B\\SignalRgbLauncher.exe", "--silent")
+    assert trofeo.split_command(r"C:\\x\\App.exe -minimized") == (r"C:\\x\\App.exe", "-minimized")
+    assert trofeo.split_command(r"C:\\Start Menu\\SignalRGB.lnk") == (r"C:\\Start Menu\\SignalRGB.lnk", "")
+
+
 def test_finding_a_start_menu_shortcut():
     import tempfile
     from buddy_pc import trofeo

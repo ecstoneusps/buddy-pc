@@ -456,6 +456,19 @@ class Layout:
         return img
 
 
+def split_command(text):
+    """'"C:\\…\\SignalRgbLauncher.exe" --silent' -> (the path, "--silent")."""
+    import re
+    t = text.strip()
+    if t.startswith('"') and '"' in t[1:]:
+        end = t.index('"', 1)
+        return t[1:end], t[end + 1:].strip()
+    m = re.match(r"^(.*?\.(?:exe|lnk|bat|cmd))(?:\s+(.*))?$", t, re.I)
+    if m:
+        return m.group(1), (m.group(2) or "").strip()
+    return t, ""
+
+
 def find_shortcut(path):
     """A Start menu shortcut for `path` when that exact file isn't there:
     "…\\SignalRgbLauncher.exe" can be "SignalRgbLauncher.exe.lnk", or a
@@ -487,7 +500,7 @@ def start_after(path, log):
     import subprocess
     if not path:
         return
-    path = path.strip().strip('"')
+    path, args = split_command(path)
     exe = os.path.basename(path).lower()
     try:
         import psutil
@@ -502,11 +515,13 @@ def start_after(path, log):
     # "SignalRgbLauncher.exe.lnk" (or ".lnk" in place of ".exe").
     if not os.path.exists(path):
         path = find_shortcut(path) or path
+    if not args and "signalrgb" in os.path.basename(path).lower():
+        args = "--silent"  # to the tray, no window (as its own autostart does)
     try:
         if path.lower().endswith(".lnk") and hasattr(os, "startfile"):
-            os.startfile(path)  # opens a shortcut like double-clicking it
+            os.startfile(path, "open", args)  # opens a shortcut like double-clicking it
         else:
-            subprocess.Popen([path], cwd=os.path.dirname(path) or None, close_fds=True)
+            subprocess.Popen([path] + args.split(), cwd=os.path.dirname(path) or None, close_fds=True)
         log(f"Trofeo screen: started {os.path.basename(path)} now that the screen is his")
     except OSError as e:
         there = ""
