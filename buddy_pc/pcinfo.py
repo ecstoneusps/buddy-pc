@@ -54,13 +54,50 @@ def clean_title(title):
     return title
 
 
-def screenshot_jpeg(width=1280):
-    """The screen(s) as a JPEG, scaled down, or None."""
+def active_monitor():
+    """(left, top, right, bottom) of the monitor the window in front is on, in
+    the same coordinates as a screenshot of all screens, or None."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                        ("dwFlags", wintypes.DWORD)]
+
+        user32 = ctypes.WinDLL("user32")
+        user32.MonitorFromWindow.restype = ctypes.c_void_p
+        user32.MonitorFromWindow.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+        user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
+        mon = user32.MonitorFromWindow(user32.GetForegroundWindow(), 2)  # MONITOR_DEFAULTTONEAREST
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(MONITORINFO)
+        if not mon or not user32.GetMonitorInfoW(mon, ctypes.byref(info)):
+            return None
+        r = info.rcMonitor
+        return r.left, r.top, r.right, r.bottom
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def screenshot_jpeg(width=1600):
+    """The monitor you're using (the one the window in front is on) as a
+    JPEG, or None. One monitor, not both side by side: text stays readable."""
     try:
         from PIL import ImageGrab
         img = ImageGrab.grab(all_screens=True)
     except Exception:  # noqa: BLE001 (not Windows, or no desktop)
         return None
+    box = active_monitor()
+    if box:
+        # All-screens coordinates start at the leftmost/topmost monitor's corner.
+        import ctypes
+        x0 = ctypes.windll.user32.GetSystemMetrics(76)  # SM_XVIRTUALSCREEN
+        y0 = ctypes.windll.user32.GetSystemMetrics(77)  # SM_YVIRTUALSCREEN
+        l, t, r, b = box
+        img = img.crop((l - x0, t - y0, r - x0, b - y0))
     if img.width > width:
         img = img.resize((width, int(img.height * width / img.width)))
     buf = io.BytesIO()
@@ -75,8 +112,8 @@ def look_at_screen(cfg, question, log):
     if jpg is None:
         return "You couldn't get a picture of the screen just now."
     prompt = (f"This is a screenshot of {cfg['owner']}'s PC screen. {question} Answer briefly, only from what "
-              "you can clearly see; read any text that matters (an error message, a title). If you can't tell, "
-              "say so.")
+              "you can clearly see; read any text that matters (an error message, a title). Ignore the clock "
+              "and date in the taskbar. If you can't tell, say so.")
     body = {"model": cfg["vision_model"], "stream": False, "keep_alive": "10m",
             "options": {"temperature": 0.2, "repeat_penalty": 1.15, "num_predict": 200},
             "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(jpg).decode()]}]}
@@ -84,4 +121,5 @@ def look_at_screen(cfg, question, log):
     r.raise_for_status()
     seen = r.json().get("message", {}).get("content", "").strip()
     log(f"(looked at the screen: {seen})")
-    return f"On the screen you see: {seen}"
+    return (f"On the screen you see: {seen} (Times or dates read off the screen may be wrong; the real time is "
+            "the one you were given.)")
