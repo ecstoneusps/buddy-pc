@@ -82,6 +82,33 @@ def active_monitor():
         return None
 
 
+def _virtual_origin():
+    import ctypes
+    u = ctypes.windll.user32
+    return u.GetSystemMetrics(76), u.GetSystemMetrics(77)  # SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN
+
+
+def _in_real_pixels(fn):
+    """Runs fn with Windows giving real pixel positions (with display scaling
+    at 125% or 150%, it otherwise gives scaled ones that don't match a
+    screenshot)."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        u.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+        u.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        old = u.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # per-monitor aware v2
+    except Exception:  # noqa: BLE001
+        old = None
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        if old:
+            u.SetThreadDpiAwarenessContext(ctypes.c_void_p(old))
+
+
 def screenshot_jpeg(width=1600):
     """The monitor you're using (the one the window in front is on) as a
     JPEG, or None. One monitor, not both side by side: text stays readable."""
@@ -90,14 +117,13 @@ def screenshot_jpeg(width=1600):
         img = ImageGrab.grab(all_screens=True)
     except Exception:  # noqa: BLE001 (not Windows, or no desktop)
         return None
-    box = active_monitor()
-    if box:
+    box = _in_real_pixels(lambda: (active_monitor(), _virtual_origin()))
+    if box and box[0] and box[1]:
         # All-screens coordinates start at the leftmost/topmost monitor's corner.
-        import ctypes
-        x0 = ctypes.windll.user32.GetSystemMetrics(76)  # SM_XVIRTUALSCREEN
-        y0 = ctypes.windll.user32.GetSystemMetrics(77)  # SM_YVIRTUALSCREEN
-        l, t, r, b = box
-        img = img.crop((l - x0, t - y0, r - x0, b - y0))
+        (l, t, r, b), (x0, y0) = box
+        crop = (l - x0, t - y0, r - x0, b - y0)
+        if 0 <= crop[0] < crop[2] <= img.width and 0 <= crop[1] < crop[3] <= img.height:
+            img = img.crop(crop)
     if img.width > width:
         img = img.resize((width, int(img.height * width / img.width)))
     buf = io.BytesIO()
