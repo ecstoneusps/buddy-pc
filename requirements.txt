@@ -17,3 +17,7 @@ psutil
 pystray
 # Turning other apps down while he talks (Windows)
 pycaw; sys_platform == "win32"
+# Pausing media and knowing what plays (Windows)
+winrt-runtime; sys_platform == "win32"
+winrt-Windows.Foundation; sys_platform == "win32"
+winrt-Windows.Media.Control; sys_platform == "win32"

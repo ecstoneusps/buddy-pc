@@ -59,6 +59,8 @@ def load(path=CONFIG_FILE):
         # More programs never to turn down (e.g. one all sound goes through), comma-separated
         "duck_skip": [x.strip() for x in g("duck_skip", "").split(",") if x.strip()],
         "chime": _on(g("chime", "on")),  # a short chime when he starts listening
+        "pause_media": _on(g("pause_media", "on")),  # pause YouTube/Spotify while you talk to him
+        "pc_awareness": _on(g("pc_awareness", "on")),  # the window in front, what's playing, the screen
         # Home Assistant's MQTT broker: memory notes shared with the desk Buddy
         "mqtt_host": g("mqtt_host", ""),
         "mqtt_port": int(g("mqtt_port", "1883")),

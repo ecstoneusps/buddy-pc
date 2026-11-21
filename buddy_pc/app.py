@@ -9,10 +9,10 @@ import time
 import traceback
 
 from . import config as config_mod
-from . import jokes, memory, tools, voiceid
+from . import jokes, memory, pcinfo, tools, voiceid
 from .face import Face, expression_for
 from .hearing import loudest_db, match_phrase, strip_phrase
-from .textutil import is_vision_request
+from .textutil import is_screen_request, is_vision_request
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
 DEBUG = bool(os.environ.get("BUDDY_DEBUG"))
@@ -102,6 +102,8 @@ class Buddy:
             try:
                 first = self._idle_until_called()
                 self.speaker.ducks.hold("conversation", True)  # quieter, so he can hear you
+                if self.cfg.get("pause_media", True):
+                    self.media.pause()  # and the video paused, while you talk
                 self._conversation(first)
             except Exception:  # noqa: BLE001 (keep going after anything unexpected)
                 traceback.print_exc()
@@ -109,6 +111,7 @@ class Buddy:
                 time.sleep(1)
             finally:
                 self.speaker.ducks.hold("conversation", False)
+                self.media.resume()
 
     def _start(self):
         from .brain import Brain
@@ -118,6 +121,9 @@ class Buddy:
         cfg = self.cfg
         self.speaker = Speaker(cfg, log)
         self.brain = Brain(cfg, log)
+        from .media import Media
+        self.media = Media(log)
+        self.brain.context = self._pc_context
         self.brain.shared.on_say = lambda text: self.remarks.put((time.time(), text))
         self.ears = Transcriber(cfg, log)
         self.mic = self._open_mic(cfg["mic"])
@@ -138,6 +144,22 @@ class Buddy:
             log("click my face to talk")
         # Warm up the chat model so the first answer isn't slow.
         threading.Thread(target=self._warm_up, daemon=True).start()
+
+    def _pc_context(self):
+        """What's going on on the PC, for his prompt (pc_awareness)."""
+        if not self.cfg.get("pc_awareness", True):
+            return ""
+        parts = []
+        win = pcinfo.active_window()
+        if win and win[1]:
+            parts.append(f"the window in front is {win[0]}: \"{win[1]}\"")
+        playing = self.media.now_playing()
+        if playing:
+            parts.append(f"playing: {playing} (paused while you talk)")
+        if not parts:
+            return ""
+        return ("[On your owner's PC right now (for reference; mention it only if it's relevant): "
+                + "; ".join(parts) + ".]\n")
 
     def _open_mic(self, name):
         """The microphone named in buddy.ini. Right after Windows starts, a USB
@@ -373,7 +395,17 @@ class Buddy:
             else:
                 extra = voiceid.LINES.get(who[0], "")
                 looked = False
-                if self.cfg.get("vision_model") and is_vision_request(heard):
+                if self.cfg.get("vision_model") and self.cfg.get("pc_awareness", True) and is_screen_request(heard):
+                    self.state = "thinking"
+                    try:
+                        seen = pcinfo.look_at_screen(self.cfg, heard, log)
+                    except Exception as e:  # noqa: BLE001
+                        log(f"couldn't look at the screen: {e}")
+                        seen = "You couldn't get a look at the screen just now (something went wrong)."
+                    extra += (f"[You just looked at the PC's screen. {seen} Answer from that alone; if it "
+                              "doesn't show what was asked, say you can't quite tell.]\n")
+                    looked = True
+                elif self.cfg.get("vision_model") and is_vision_request(heard):
                     # Look first, then answer from it (asked to call a tool for it,
                     # he sometimes guessed first, or didn't look at all: a banana).
                     self.state = "thinking"

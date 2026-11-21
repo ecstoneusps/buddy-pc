@@ -59,6 +59,7 @@ class Brain:
         self.cfg, self.log = cfg, log
         self.history = []  # (time, role, text)
         self._lock = threading.Lock()
+        self.context = None  # what's on the PC (app.py fills it in)
         self.shared = SharedNotes(cfg, log, **({"cache_file": cfg["notes_cache"]} if "notes_cache" in cfg else {}))
 
     # -- what goes into the prompt ------------------------------------------
@@ -95,7 +96,12 @@ class Brain:
 
     def system_prompt(self):
         now = dt.datetime.now()
-        return (self.personality() + "\n\n"
+        ctx = ""
+        try:
+            ctx = self.context() if self.context else ""
+        except Exception:  # noqa: BLE001
+            pass
+        return (self.personality() + "\n\n" + ctx
                 + f"[It's {now.strftime('%A, %B %d, %Y')}, {now.strftime('%I:%M %p').lstrip('0')}.]\n"
                 + limits(self.cfg)
                 + notes_block(self.notes()) + self.diary())

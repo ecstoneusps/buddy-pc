@@ -903,6 +903,70 @@ def test_video_chatter_that_fools_the_quick_check_doesnt_wake_him():
     assert "r" not in done  # still waiting: the careful check didn't hear "Hey Buddy"
 
 
+def test_screen_questions_and_window_names():
+    from buddy_pc import pcinfo
+    assert T.is_screen_request("What's this error?") and T.is_screen_request("what's on my screen")
+    assert T.is_screen_request("can you read this page for me")
+    assert not T.is_screen_request("what am I holding?") and not T.is_screen_request("tell me a joke")
+    assert pcinfo.clean_title("Good Mythical Morning - YouTube - Personal - Microsoft\u200b Edge") == \
+        "Good Mythical Morning - YouTube"
+    assert pcinfo.app_label("msedge.exe") == "Microsoft Edge" and pcinfo.app_label("Game.exe") == "Game"
+
+
+def test_media_pauses_what_plays_and_resumes_it():
+    import sys as _sys
+    import types as _types
+    from enum import IntEnum
+    from unittest import mock
+
+    class St(IntEnum):
+        PLAYING = 4
+        PAUSED = 5
+
+    calls = []
+
+    class Session:
+        def __init__(self, app, playing):
+            self.source_app_user_model_id, self.status = app, St.PLAYING if playing else St.PAUSED
+
+        def get_playback_info(self):
+            return _types.SimpleNamespace(playback_status=self.status)
+
+        async def try_pause_async(self):
+            calls.append(("pause", self.source_app_user_model_id))
+            self.status = St.PAUSED
+            return True
+
+        async def try_play_async(self):
+            calls.append(("play", self.source_app_user_model_id))
+            self.status = St.PLAYING
+            return True
+
+        async def try_get_media_properties_async(self):
+            return _types.SimpleNamespace(title="Good Mythical Morning", artist="")
+
+    sessions = [Session("MSEdge", True), Session("Spotify.exe", False)]
+
+    class Manager:
+        @staticmethod
+        async def request_async():
+            return _types.SimpleNamespace(get_sessions=lambda: sessions)
+
+    ctl = _types.ModuleType("winrt.windows.media.control")
+    ctl.GlobalSystemMediaTransportControlsSessionManager = Manager
+    ctl.GlobalSystemMediaTransportControlsSessionPlaybackStatus = St
+    mods = {"winrt": _types.ModuleType("winrt"), "winrt.windows": _types.ModuleType("winrt.windows"),
+            "winrt.windows.media": _types.ModuleType("winrt.windows.media"), "winrt.windows.media.control": ctl}
+    with mock.patch.dict(_sys.modules, mods):
+        from buddy_pc.media import Media
+        m = Media(lambda *a, **k: None)
+        assert m.now_playing() == '"Good Mythical Morning" (Microsoft Edge)'
+        assert m.pause()
+        assert m.now_playing() == '"Good Mythical Morning" (Microsoft Edge)'  # paused by him: still "playing"
+        m.resume()
+    assert calls == [("pause", "MSEdge"), ("play", "MSEdge")]  # Spotify was already paused: left alone
+
+
 def test_conversation_cancel_and_clarify_end_it():
     b = _fake_buddy([], ["never mind"])
     b._conversation()

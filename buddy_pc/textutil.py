@@ -124,6 +124,16 @@ _VISION = [" " + normalize(p) + " " for p in (
     "what colour is my", "what color am I", "see what I", "in my hand", "am I holding")]
 
 
+_SCREEN = re.compile(r"\b(my|the|this|on) (screen|monitor|display)\b|\b(this|that|the) (error|message|window|"
+                     r"page|website|tab)\b|\bon my (pc|computer)\b", re.I)
+
+
+def is_screen_request(heard):
+    """A question about what's on the PC's screen ("what's this error?",
+    "what's on my screen?"), answered from a screenshot, not the webcam."""
+    return bool(_SCREEN.search(heard))
+
+
 def is_vision_request(heard):
     """A question he can only answer by looking ("what am I holding?")."""
     h = " " + normalize(heard) + " "
