@@ -11,7 +11,7 @@ import traceback
 from . import config as config_mod
 from . import jokes, memory, tools, voiceid
 from .face import Face, expression_for
-from .hearing import loudest_db, strip_phrase
+from .hearing import loudest_db, match_phrase, strip_phrase
 from .textutil import is_vision_request
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
@@ -263,6 +263,14 @@ class Buddy:
                         woke, text = self.wake.check(audio)
                         if not woke:
                             log(f"(not for me: heard \"{text}\", {loud:.0f} dB, {time.time() - t0:.2f} s)")
+                        else:
+                            # The quick model is easily fooled by a video's chatter
+                            # ("hey... Judy"): the careful one checks the same clip.
+                            sure = self.ears.text(audio, hotwords=self.wake.phrase.title())
+                            if match_phrase(self.wake.phrase, sure, strict=True) < 0:
+                                woke = False
+                                log(f"(not for me: quick check heard \"{text}\", careful check heard "
+                                    f"\"{sure}\")")
                     if woke:
                         log("wake word: listening")
                         self.speaker.ducks.hold("conversation", True)  # quieter, so he can hear you

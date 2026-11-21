@@ -737,6 +737,8 @@ def test_wake_phrase_matching():
         assert match_phrase("hey buddy", yes) >= 0, yes
     for no in ("Hey everybody, welcome back to the channel", "That's my buddy over there", "", "Hi there"):
         assert match_phrase("hey buddy", no) < 0, no
+    assert match_phrase("hey buddy", "Hey Judy, watch this", strict=True) < 0     # the video's "Judy"
+    assert match_phrase("hey buddy", "Hey Buddy, tell me a joke", strict=True) >= 0
     assert strip_phrase("hey buddy", "Hey, Buddy, what time is it?") == "what time is it?"
     assert strip_phrase("hey buddy", "Hey Buddy.") == ""
     assert strip_phrase("hey buddy", "What time is it?") == "What time is it?"
@@ -872,10 +874,33 @@ def test_hey_buddy_in_the_middle_of_a_video():
             pass
 
     b.wake = Wake()
+    b.ears = type("E", (), {"text": lambda self, a, hotwords=None, strict=False:
+                            "Hey Buddy" if np.any(a % 2) else "video talk"})()
     pcm = b._idle_phrase()
     assert len(checks) >= 4                     # kept checking while the video talked
     assert pcm is not None and np.any(pcm % 2)  # caught it, and kept the "Hey Buddy" part
     assert len(pcm) < 60 * 1280                 # without most of the video from before it
+
+
+def test_video_chatter_that_fools_the_quick_check_doesnt_wake_him():
+    from buddy_pc.app import Buddy
+    from buddy_pc.hearing import Endpointer
+    frames = [_tone(-18) for _ in range(40)] + [_tone(-70) for _ in range(15)]
+    b = Buddy.__new__(Buddy)
+    b.cfg = {}
+    b.click, b.cancel = threading.Event(), threading.Event()
+    b.speaker = FakeSpeaker()
+    b.remarks = __import__("queue").Queue()
+    b.mic = FakeMic(frames)
+    b.endpoint = Endpointer()
+    b.wake = type("W", (), {"phrase": "hey buddy", "check": lambda self, a: (True, "hey buddy"),
+                            "reset": lambda self: None})()
+    b.ears = type("E", (), {"text": lambda self, a, hotwords=None, strict=False: "Hey Judy, watch this"})()
+    done = {}
+    t = threading.Thread(target=lambda: done.setdefault("r", b._idle_phrase()), daemon=True)
+    t.start()
+    t.join(8)
+    assert "r" not in done  # still waiting: the careful check didn't hear "Hey Buddy"
 
 
 def test_conversation_cancel_and_clarify_end_it():

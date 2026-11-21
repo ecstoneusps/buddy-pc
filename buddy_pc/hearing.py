@@ -204,7 +204,7 @@ def is_phrase_wake_word(name):
     return bool(n) and n not in OWW_MODELS and not n.endswith((".onnx", ".tflite")) and n not in ("off", "none")
 
 
-def match_phrase(phrase, text):
+def match_phrase(phrase, text, strict=False):
     """Where the phrase ends in `text` if it's said near the start (within
     the first few words), allowing for small mishearings; else -1. The result
     counts words of normalize(text)."""
@@ -221,7 +221,8 @@ def match_phrase(phrase, text):
         got = words[start:start + n]
         if len(got) == n:
             scores = [sim(a, b) for a, b in zip(got, want_words)]
-            if min(scores) >= 0.6 and sum(scores) / n >= 0.75:
+            lo, avg = (0.75, 0.85) if strict else (0.6, 0.75)  # strict: "judy" isn't "buddy"
+            if min(scores) >= lo and sum(scores) / n >= avg:
                 return start + n
         # Run together ("heybuddy").
         if n > 1 and start < len(words) and sim(words[start], want.replace(" ", "")) >= 0.85:
