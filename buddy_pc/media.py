@@ -89,8 +89,13 @@ class Media:
 
 def app_name(aumid):
     """'MSEdge' / 'Spotify.exe' / 'Microsoft.ZuneMusic_8wekyb...!Microsoft.ZuneMusic' -> a readable name."""
-    a = (aumid or "app").split("!")[-1]
-    a = a.rsplit("\\", 1)[-1].removesuffix(".exe").removesuffix(".EXE")
-    names = {"msedge": "Microsoft Edge", "chrome": "Chrome", "firefox": "Firefox", "spotify": "Spotify",
-             "microsoft.zunemusic": "Media Player"}
-    return names.get(a.lower(), a)
+    full = (aumid or "").lower()
+    for key, name in (("edge", "Microsoft Edge"), ("chrome", "Chrome"), ("firefox", "Firefox"),
+                      ("spotify", "Spotify"), ("zunemusic", "Media Player"), ("vlc", "VLC"),
+                      ("discord", "Discord")):
+        if key in full:
+            return name
+    # "Publisher.Name_hash!App" -> "Name"; "C:\\...\\thing.exe" -> "thing"
+    a = (aumid or "an app").split("!")[0].rsplit("\\", 1)[-1]
+    a = a.split("_")[0].rsplit(".", 1)[-1] if "_" in a else a
+    return a.removesuffix(".exe").removesuffix(".EXE") or "an app"

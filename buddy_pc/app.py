@@ -50,6 +50,7 @@ class Buddy:
     max_follow_ups = 3  # then the wake word again (so a TV can't keep him going)
     your_level = -24.0  # how loud you usually are (dB), learned as you talk to him
     woke_midstream = False  # caught "Hey Buddy" in the middle of other talk
+    loopback = None  # what the PC plays (set up in _start)
     wake = None
 
     def __init__(self, cfg):
@@ -313,9 +314,18 @@ class Buddy:
                             # ("hey... Judy"): the careful one checks the same clip.
                             sure = self.ears.text(audio, hotwords=self.wake.phrase.title())
                             if match_phrase(self.wake.phrase, sure, strict=True) < 0:
-                                woke = False
-                                log(f"(not for me: quick check heard \"{text}\", careful check heard "
-                                    f"\"{sure}\")")
+                                # The careful model can drop the phrase too. If the PC
+                                # didn't play anything like it, it came from the room: you.
+                                played = self._pc_said(len(audio) / 16000)
+                                from_room = (self.loopback is not None and self.loopback.ok
+                                             and match_phrase(self.wake.phrase, played) < 0
+                                             and not same_words(text, played))
+                                if from_room:
+                                    log(f"(careful check heard \"{sure}\", but the PC didn't say it: taking it)")
+                                else:
+                                    woke = False
+                                    log(f"(not for me: quick check heard \"{text}\", careful check heard "
+                                        f"\"{sure}\")")
                             else:
                                 played = self._pc_said(len(audio) / 16000)
                                 if played and match_phrase(self.wake.phrase, played) >= 0:

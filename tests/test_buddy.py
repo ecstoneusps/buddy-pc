@@ -904,6 +904,13 @@ def test_video_chatter_that_fools_the_quick_check_doesnt_wake_him():
     assert "r" not in done  # still waiting: the careful check didn't hear "Hey Buddy"
 
 
+def test_media_app_names():
+    from buddy_pc.media import app_name
+    assert app_name("Microsoft.MicrosoftEdge.Stable_8wekyb3d8bbwe!App") == "Microsoft Edge"
+    assert app_name("MSEdge") == "Microsoft Edge" and app_name("Spotify.exe") == "Spotify"
+    assert app_name("Publisher.CoolPlayer_abc123!App") == "CoolPlayer"
+
+
 def test_screen_questions_and_window_names():
     from buddy_pc import pcinfo
     assert T.is_screen_request("What's this error?") and T.is_screen_request("what's on my screen")
