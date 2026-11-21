@@ -30,6 +30,8 @@ class Loopback:
             self.log(f"(can't hear what the PC plays: {type(e).__name__}: {e}; going by voice and loudness)")
             return
         self.log(f"(listening to what the PC plays on \"{speaker.name}\", to tell it apart from you)")
+        import warnings
+        warnings.filterwarnings("ignore", message="data discontinuity")  # a gap now and then: harmless
         while True:
             try:
                 with source.recorder(samplerate=RATE, channels=1, blocksize=RATE // 10) as rec:

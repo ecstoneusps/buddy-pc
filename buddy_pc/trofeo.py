@@ -475,8 +475,18 @@ def start_after(path, log):
             return  # already running
     except Exception:  # noqa: BLE001
         pass
+    # A Start menu entry is a shortcut: "…\\SignalRgbLauncher.exe" there is really
+    # "SignalRgbLauncher.exe.lnk" (or ".lnk" in place of ".exe").
+    if not os.path.exists(path):
+        for alt in (path + ".lnk", os.path.splitext(path)[0] + ".lnk"):
+            if os.path.exists(alt):
+                path = alt
+                break
     try:
-        subprocess.Popen([path], cwd=os.path.dirname(path) or None, close_fds=True)
+        if path.lower().endswith(".lnk") and hasattr(os, "startfile"):
+            os.startfile(path)  # opens a shortcut like double-clicking it
+        else:
+            subprocess.Popen([path], cwd=os.path.dirname(path) or None, close_fds=True)
         log(f"Trofeo screen: started {os.path.basename(path)} now that the screen is his")
     except OSError as e:
         log(f"Trofeo screen: couldn't start {path} ({e}); check start_after_screen in buddy.ini")
