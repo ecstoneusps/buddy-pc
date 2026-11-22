@@ -585,6 +585,13 @@ def test_start_after_screen_with_options():
     assert trofeo.split_command(r"C:\\Start Menu\\SignalRGB.lnk") == (r"C:\\Start Menu\\SignalRGB.lnk", "")
 
 
+def test_program_names_for_reclaiming_the_screen():
+    from buddy_pc import trofeo
+    n = trofeo.program_names(r"C:\\Start Menu\\SignalRGB.lnk")
+    assert {"signalrgb.exe", "signalrgblauncher.exe"} <= n
+    assert trofeo.program_names(r'"C:\\x\\Other.exe" -min') == {"other.exe"}
+
+
 def test_finding_a_start_menu_shortcut():
     import tempfile
     from buddy_pc import trofeo

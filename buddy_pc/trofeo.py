@@ -531,6 +531,44 @@ def start_after(path, log):
         log(f"Trofeo screen: couldn't start {path} ({e}){there}; check start_after_screen in buddy.ini")
 
 
+def program_names(path):
+    """The process names a start_after_screen program runs as."""
+    import ntpath  # a Windows path, split the Windows way (also when tested elsewhere)
+    import os
+    exe, _ = split_command(path)
+    names = {ntpath.basename(os.path.splitext(exe)[0] if exe.lower().endswith(".lnk") else exe).lower()}
+    names = {n if n.endswith(".exe") else n + ".exe" for n in names}
+    if any("signalrgb" in n for n in names):
+        names |= {"signalrgb.exe", "signalrgblauncher.exe"}
+    return names
+
+
+def stop_program(path, log):
+    """Closes the start_after_screen program (it took the screen). True if it was running."""
+    try:
+        import psutil
+    except ImportError:
+        return False
+    names = program_names(path)
+    procs = [p for p in psutil.process_iter(["name"]) if (p.info.get("name") or "").lower() in names]
+    if not procs:
+        return False
+    log(f"Trofeo screen: {procs[0].info['name']} took the screen (after the PC woke?): closing it, then "
+        "starting it again once the screen is his")
+    for p in procs:
+        try:
+            p.terminate()
+        except psutil.Error:
+            pass
+    _, alive = psutil.wait_procs(procs, timeout=5)
+    for p in alive:
+        try:
+            p.kill()
+        except psutil.Error:
+            pass
+    return True
+
+
 def run(face, cfg, log, stop=None, state=lambda: "idle"):
     """Keeps the screen showing the face (a thread). Reconnects if the screen
     goes away (unplugged, or TRCC took it)."""
@@ -540,16 +578,27 @@ def run(face, cfg, log, stop=None, state=lambda: "idle"):
     layout = Layout(face, Stats(log), portrait, state)
     screen, warned = None, False
     shown, t_report = 0, time.time()
+    last_reclaim = 0.0
+    after = cfg.get("start_after_screen", "")
     while not stop.is_set():
         if screen is None:
             try:
                 screen = TrofeoScreen(log, cfg.get("trofeo_rotate", "auto"), portrait)
                 warned = False
-                start_after(cfg.get("start_after_screen", ""), log)
+                start_after(after, log)
             except Exception as e:  # noqa: BLE001 (not there, or busy: try again later)
                 if not warned:
                     log(f"Trofeo screen: {e}")
                     warned = True
+                # After the PC wakes from sleep, the screen comes back as if newly
+                # plugged in, and the program that should start after him (SignalRGB)
+                # may grab it first. Close it, take the screen, start it again.
+                busy = "access denied" in str(e).lower() or "busy" in str(e).lower()
+                if busy and after and time.time() - last_reclaim > 60:
+                    last_reclaim = time.time()
+                    if stop_program(after, log):
+                        stop.wait(2)
+                        continue  # try for the screen again now
                 stop.wait(5)
                 continue
         t0 = time.time()
