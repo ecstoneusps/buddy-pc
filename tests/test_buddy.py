@@ -959,6 +959,17 @@ def test_slow_camera_checked_before_the_first_answer():
     assert b.speaker.said == [] and b.wake_look is None
 
 
+def test_question_asked_while_he_worked_out_hey_buddy_is_kept():
+    # The wake clip was just "Hey Buddy"; you asked for a joke meanwhile.
+    b = _fake_buddy([["[laughing] Here's one."]], ["Hey Buddy", "tell me a joke"])
+    b.cfg["follow_up"] = False
+    b.wake = type("W", (), {"phrase": "hey buddy"})()
+    drained = []
+    b.mic = type("M", (), {"drain": lambda self: drained.append(1)})()
+    b._conversation(first=np.zeros(16000, np.int16))
+    assert drained == [] and b.speaker.said == ["Here's one."]
+
+
 def test_facing_him_or_not():
     from unittest import mock
     from buddy_pc import presence as P

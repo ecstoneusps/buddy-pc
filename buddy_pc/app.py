@@ -456,7 +456,10 @@ class Buddy:
                     log("-> no \"hey buddy\" in that after all; going back to waiting")
                     return
                 if rest != heard and not rest:
-                    continue  # only "Hey Buddy" after all: listen for the question
+                    # Only "Hey Buddy": listen for the question, keeping what you've
+                    # said since (you may have asked while he was working this out).
+                    self.just_woke = True
+                    continue
                 heard = rest
             if not heard:
                 return
