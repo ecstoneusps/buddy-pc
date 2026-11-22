@@ -109,6 +109,8 @@ class TrofeoScreen:
         except usb.core.USBError:
             pass  # already configured (Windows)
         self.dev = dev
+        self.acks = 0  # its "got it" replies (if it sends them), and how many missed in a row
+        self.missed = 0
         resp, tried, last = None, [], None
         for out_ep, in_ep in endpoint_pairs(dev):
             tried.append(f"0x{out_ep:02x}")
@@ -122,6 +124,7 @@ class TrofeoScreen:
             self.ep_out, self.ep_in, resp = out_ep, in_ep, r
             break
         if resp is None:
+            self.close()  # or our own leftover hold on it says "busy" next time
             raise RuntimeError(f"the screen didn't answer on any of its endpoints ({', '.join(tried)}: {last}); "
                                "is another program using it (Thermalright's TRCC app, SignalRGB)?")
         sub = parse_handshake(resp)
@@ -136,9 +139,23 @@ class TrofeoScreen:
             self.dev.write(self.ep_out, part, timeout=5000)
         try:
             self.dev.read(self.ep_in, 512, timeout=1000)  # its "got it"
+            self.acks += 1
+            self.missed = 0
         except usb.core.USBError:
-            pass
+            self.missed += 1
+            # It used to answer and has gone quiet (asleep, after the PC slept):
+            # the pictures aren't getting through. Start over with a handshake.
+            if self.acks and self.missed >= 3:
+                raise RuntimeError("the screen stopped saying it got the pictures")
         return True
+
+    def close(self):
+        """Lets go of the screen (so a fresh connection can take it, ours or another program's)."""
+        try:
+            import usb.util
+            usb.util.dispose_resources(self.dev)
+        except Exception:  # noqa: BLE001
+            pass
 
     def show(self, image, quality=85):
         """Shows a Pillow image: 1920x462 (landscape) or 462x1920 (portrait)."""
@@ -580,7 +597,16 @@ def run(face, cfg, log, stop=None, state=lambda: "idle"):
     shown, t_report = 0, time.time()
     last_reclaim = 0.0
     after = cfg.get("start_after_screen", "")
+    last_loop = time.time()
     while not stop.is_set():
+        # A big jump in the clock: the PC slept. The screen needs a fresh start
+        # (a new handshake) even if it still takes the pictures without an error.
+        if time.time() - last_loop > 20 and screen is not None:
+            log("Trofeo screen: the PC was asleep; connecting to the screen again")
+            screen.close()
+            screen = None
+            last_reclaim = 0.0
+        last_loop = time.time()
         if screen is None:
             try:
                 screen = TrofeoScreen(log, cfg.get("trofeo_rotate", "auto"), portrait)
@@ -607,7 +633,9 @@ def run(face, cfg, log, stop=None, state=lambda: "idle"):
             shown += 1
         except Exception as e:  # noqa: BLE001
             log(f"Trofeo screen stopped answering ({e}); trying again")
+            screen.close()
             screen = None
+            stop.wait(1)
             continue
         if time.time() - t_report > 60:
             log(f"(Trofeo screen: {shown / (time.time() - t_report):.1f} pictures a second)", debug=True)

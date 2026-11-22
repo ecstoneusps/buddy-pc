@@ -508,6 +508,36 @@ def test_shared_notes_newest_wins_and_survive_a_restart():
 # The Trofeo Vision screen (no USB: the pieces are checked byte by byte)
 
 
+def test_trofeo_reconnects_after_the_pc_sleeps():
+    from unittest import mock
+    from buddy_pc import trofeo
+    made, closed, started = [], [], []
+    stop = threading.Event()
+    clock = [1000.0]
+
+    class Screen:
+        def __init__(self, *a):
+            made.append(self)
+
+        def show(self, image):
+            clock[0] += 0.05
+            if len(made) == 1 and clock[0] > 1001:
+                clock[0] += 3600  # the PC slept (and the screen took pictures without an error)
+            if len(made) == 2:
+                stop.set()
+
+        def close(self):
+            closed.append(self)
+
+    with mock.patch.object(trofeo, "TrofeoScreen", Screen), mock.patch.object(trofeo, "Layout"), \
+            mock.patch.object(trofeo, "Stats"), mock.patch.object(trofeo.time, "time", lambda: clock[0]), \
+            mock.patch.object(trofeo, "start_after", lambda path, log: started.append(path)):
+        stop.wait = lambda t=None: stop.is_set()
+        trofeo.run(None, {"start_after_screen": "SignalRGB"}, lambda *a, **k: None, stop=stop)
+    assert len(made) == 2 and closed == made[:1]
+    assert started == ["SignalRGB", "SignalRGB"]  # started again if it closed when the PC slept
+
+
 def test_trofeo_pieces():
     import struct as st
     from buddy_pc import trofeo
