@@ -917,6 +917,33 @@ def test_your_question_with_the_video_after_it():
     assert asked == ["tell me a joke."] and b.speaker.said == ["Here's one."]
 
 
+def test_log_keeps_two_days():
+    import datetime as dt
+    import tempfile
+    from unittest import mock
+    from buddy_pc.app import DailyLog
+    real = dt.date
+    d = tempfile.mkdtemp()
+    log_file = DailyLog(os.path.join(d, "buddy.log"))
+    log_file.write("today\n")
+
+    def later(days):
+        class Later(real):
+            @classmethod
+            def today(cls):
+                return real.today() + dt.timedelta(days=days)
+        return Later
+    with mock.patch("datetime.date", later(1)):
+        log_file.write("tomorrow\n")
+    with mock.patch("datetime.date", later(2)):
+        log_file.write("the day after\n")
+    log_file.flush()
+    assert sorted(os.listdir(d)) == ["buddy-yesterday.log", "buddy.log"]
+    assert "the day after" in open(os.path.join(d, "buddy.log")).read()
+    assert "tomorrow" in open(os.path.join(d, "buddy-yesterday.log")).read()
+    assert "today" not in open(os.path.join(d, "buddy-yesterday.log")).read().replace("Today", "")
+
+
 def test_facing_him_or_not():
     from unittest import mock
     from buddy_pc import presence as P

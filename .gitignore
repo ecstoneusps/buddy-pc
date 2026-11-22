@@ -9,4 +9,5 @@ memories.json.tmp
 memories-backup.txt
 buddy.log
 buddy.log.old
+buddy-yesterday.log
 jokes.json
