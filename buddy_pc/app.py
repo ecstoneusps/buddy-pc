@@ -50,6 +50,7 @@ class Buddy:
     max_follow_ups = 3  # then the wake word again (so a TV can't keep him going)
     your_level = -24.0  # how loud you usually are (dB), learned as you talk to him
     woke_midstream = False  # caught "Hey Buddy" in the middle of other talk
+    just_woke = False  # "Hey Buddy" and a pause: what you say next may already be coming in
     loopback = None  # what the PC plays (set up in _start)
     wake = None
 
@@ -339,8 +340,12 @@ class Buddy:
                                     log(f"(not for me: the PC itself said it: \"{played}\")")
                     if woke:
                         log("wake word: listening")
+                        # That was you saying "Hey Buddy": how loud you are, right now,
+                        # through this mic (the question will be about as loud).
+                        self.your_level += (loud - self.your_level) * 0.5
                         self.speaker.ducks.hold("conversation", True)  # quieter, so he can hear you
                         if quiet > 0.5 and len(seg) - start <= 20:
+                            self.just_woke = True
                             return None  # just "Hey Buddy": now listen for the question
                         seg = seg[start:]  # from "Hey Buddy" on (not the video before it)
                         self.woke_midstream = True  # (the careful transcription may miss the phrase)
@@ -362,27 +367,34 @@ class Buddy:
         while True:
             self.state = "listening"
             with_wake = first is not None
+            min_db = -120.0
             if with_wake:
                 pcm, first = first, None
             else:
                 if not follow_up and self.cfg.get("chime", True):
                     self.speaker.chime()  # "I'm listening" (heard over the room, like the desk Buddy's chirp)
-                self.mic.drain()
+                # Straight after "Hey Buddy", keep what came in meanwhile: "Hey Buddy...
+                # learn my voice" in one go, the rest said while he checked and chimed.
+                keep = self.just_woke and not follow_up
+                self.just_woke = False
+                if not keep:
+                    self.mic.drain()
                 self.endpoint.start_window = 5.0 if follow_up else 6.0
                 # After he talks, the first moments are the echo of his own voice.
                 # A follow-up must be about as loud as you were just now
                 # (within 10 dB): quieter voices are a fan, the TV, his echo.
+                min_db = your_level - 10 if follow_up and your_level else self.your_level - 12
                 pcm = self.endpoint.record(self.mic, cancelled=self.cancel.is_set,
-                                           ignore_first=0.7 if follow_up else 0.25,
-                                           min_db=(your_level - 10 if follow_up and your_level
-                                                   else self.your_level - 12))
+                                           ignore_first=0.7 if follow_up else (0.0 if keep else 0.25),
+                                           min_db=min_db)
             if pcm is None or self.cancel.is_set():
                 if follow_up:
                     log("no follow-up")
                 elif not self.cancel.is_set():
                     log(f"didn't hear anything: loudest {self.endpoint.loudest:.0f} dB, background "
                         f"{self.endpoint.floor:.0f} dB (speech needs about "
-                        f"{max(self.endpoint.floor + 12, -52):.0f} dB)")
+                        f"{max(self.endpoint.floor + 12, -52, min_db):.0f} dB, as you're usually about "
+                        f"{self.your_level:.0f} dB)")
                 return
             self.state = "thinking"
             # Who's talking, at the same time as working out what they said.

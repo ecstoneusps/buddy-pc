@@ -808,6 +808,23 @@ def test_learn_my_voice_on_the_pc():
     assert b.endpoint.end_silence == 0.9  # put back
 
 
+def test_question_said_right_after_hey_buddy_is_kept():
+    # "Hey Buddy learn my voice" in one breath, a bit quieter than he expected:
+    # what came in while he chimed isn't thrown away, and the bar follows how
+    # loud the "Hey Buddy" was.
+    b = _fake_buddy([["[happy] Hi."]], ["hello"])
+    b.cfg["follow_up"] = False
+    drained, calls = [], []
+    b.mic = type("M", (), {"drain": lambda self: drained.append(1)})()
+    b.endpoint.record = lambda mic, cancelled=None, ignore_first=0, min_db=-120.0: \
+        calls.append((ignore_first, min_db)) or np.zeros(16000, np.int16)
+    b.your_level = -38.0  # (as after a "Hey Buddy" at about -40 dB)
+    b.just_woke = True
+    b._conversation()
+    assert drained == [] and calls[0][0] == 0.0 and calls[0][1] <= -50
+    assert not b.just_woke
+
+
 def test_vision_questions_look_first():
     from unittest import mock
     from buddy_pc import tools
