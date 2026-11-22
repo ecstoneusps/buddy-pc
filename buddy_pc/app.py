@@ -317,16 +317,16 @@ class Buddy:
                             if match_phrase(self.wake.phrase, sure, strict=True) < 0:
                                 # The careful model can drop the phrase too. If the PC
                                 # didn't play anything like it, it came from the room: you.
-                                # ...and if it sounds like you (a visitor is in the room too).
+                                # ...and if it's clearly your voice (a video or a visitor isn't).
                                 from_room = False
                                 if (self.loopback is not None and self.loopback.ok
                                         and match_phrase(self.wake.phrase, text, strict=True) >= 0
                                         and self.cfg.get("voice_id_url")):
                                     played = self._pc_said(len(audio) / 16000)
                                     if match_phrase(self.wake.phrase, played) < 0 and not same_words(text, played):
-                                        voiceid.identify(self.cfg, audio, log)
-                                        score = voiceid.LAST.get("score")
-                                        from_room = score is not None and score >= 0.15
+                                        # It has to be you, clearly: a video's voice can score
+                                        # "unsure" (0.26) and the PC's sound isn't always caught word for word.
+                                        from_room = voiceid.identify(self.cfg, audio, log) == "owner"
                                 if from_room:
                                     log(f"(careful check heard \"{sure}\", but the PC didn't say it: taking it)")
                                 else:

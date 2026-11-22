@@ -96,7 +96,7 @@ class Media:
 def app_name(aumid):
     """'MSEdge' / 'Spotify.exe' / 'Microsoft.ZuneMusic_8wekyb...!Microsoft.ZuneMusic' -> a readable name."""
     import re
-    if re.fullmatch(r"(com-)?[0-9a-f]{6,}", (aumid or "").strip(), re.I):
+    if re.fullmatch(r"\W*(com-)?[0-9a-f]{6,}\W*", "".join(c for c in (aumid or "") if c.isprintable()), re.I):
         return ""  # an internal code (Edge reports some sites like this): no name to give
     full = (aumid or "").lower()
     for key, name in (("edge", "Microsoft Edge"), ("chrome", "Chrome"), ("firefox", "Firefox"),
