@@ -248,6 +248,11 @@ class Buddy:
             return False
         if time.time() - at > 180:  # waited through a long conversation: stale now
             return True
+        # Nobody at the desk: he'd be talking to an empty room (you, in the
+        # next room, hearing him chat to himself).
+        if self.cfg.get("need_to_see_you") and presence.check(self.cfg, log) == "away":
+            log(f"(Buddy's eyes had something to say, but you're not at the desk; not saying it: \"{text}\")")
+            return True
         log(f"Buddy's eyes: \"{text}\"")
         self._answer("", iter([text]))
         self.brain.history.append((time.time(), "assistant", split_reply(text)[1]))

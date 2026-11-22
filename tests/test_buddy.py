@@ -3,6 +3,7 @@ python -m pytest tests  (or python tests/test_buddy.py)"""
 
 import json
 import os
+import queue
 import socket
 import sys
 import threading
@@ -853,6 +854,20 @@ def test_question_said_right_after_hey_buddy_is_kept():
     b._conversation()
     assert drained == [] and calls[0][0] == 0.0 and calls[0][1] <= -50
     assert not b.just_woke
+
+
+def test_no_remarks_to_an_empty_room():
+    from unittest import mock
+    from buddy_pc import presence as P
+    b = _fake_buddy([], [])
+    b.cfg["need_to_see_you"] = True
+    b.remarks = queue.Queue()
+    b.brain.history = []
+    for where in ("away", "turned"):
+        b.remarks.put((time.time(), "[silly] I'd take over the world."))
+        with mock.patch.object(P, "check", lambda cfg, log: where):
+            assert b._say_remark()
+    assert b.speaker.said == ["I'd take over the world."]  # only when you were there (turned is fine)
 
 
 def test_facing_him_or_not():
