@@ -71,8 +71,10 @@ _TWEAKS = {
                    eyeR=20, eyeG=120, eyeB=170, lookY=0.6),
     "confused": dict(eyeScaleL=1.12, eyeScaleR=0.72, mouthW=40, mouthCurve=-0.3, eyeR=120, eyeG=210, eyeB=255,
                      lookY=-0.3),
-    "listening": dict(eyeW=70, eyeH=94, mouthW=28, mouthCurve=0.3, mouthOpen=0.2, eyeR=0, eyeG=255, eyeB=200,
-                      lookY=-0.15),
+    # Plainly different from every other face: big bright green eyes (they pulse
+    # gently, see _draw), a small "o" mouth, looking up at you.
+    "listening": dict(eyeW=80, eyeH=104, mouthW=26, mouthCurve=0.2, mouthOpen=0.35, eyeR=40, eyeG=255, eyeB=90,
+                      lookY=-0.2),
     "love": dict(eyeW=70, eyeH=80, lidBottom=0.5, mouthW=56, mouthCurve=1.0, mouthOpen=0.25, blush=1.0,
                  eyeR=255, eyeG=90, eyeB=170),
     "laughing": dict(eyeW=72, eyeH=76, lidBottom=0.8, mouthW=76, mouthCurve=1.0, mouthOpen=0.85, blush=0.8,
@@ -216,6 +218,8 @@ class Face:
         for side in (-1, 1):
             persp = 1.0 + self.look_x * 0.08 * side
             sc = (p.eyeScaleL if side < 0 else p.eyeScaleR) * persp
+            if self.expression == "listening":
+                sc *= 1.0 + 0.07 * math.sin(t * 2 * math.pi / 900.0)  # a slow pulse: "I'm listening"
             op = _clamp(open_both * (p.opennessL if side < 0 else p.opennessR), 0, 1)
             w = p.eyeW * s * sc
             h_full = p.eyeH * s * sc

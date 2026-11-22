@@ -219,6 +219,21 @@ class Ducks:
                 ducker.restore()
 
 
+def chime_sound(rate=24000, volume=1.0):
+    """The "I'm listening" chime: two rising notes, as loud as his voice."""
+    notes = []
+    for f, ms in ((1047, 120), (1568, 170)):  # C6 then G6: easy to hear over a room
+        t = np.arange(int(rate * ms / 1000)) / rate
+        env = np.minimum(1.0, np.minimum(t, t[::-1]) * 200)  # 5 ms fade in and out: no clicks
+        tone = np.sin(2 * np.pi * f * t) + 0.3 * np.sin(2 * np.pi * 2 * f * t)  # a bit of ring
+        notes.append(tone * env)
+        notes.append(np.zeros(int(rate * 0.02)))
+    wave = (np.concatenate(notes) * 8000).astype(np.int16)
+    # The same loudness as his speech (levelled, then `volume`), a little under.
+    gain, _ = level_gain(wave, volume * 0.8)
+    return boost(wave, gain)
+
+
 class Speaker:
     """Plays sentences one after another (each is synthesized while the one
     before it plays). say() queues one; end() marks the end of a reply."""
@@ -244,16 +259,13 @@ class Speaker:
         try:
             import sounddevice as sd
             rate = 24000
-            notes = []
-            for f, ms in ((880, 70), (1320, 110)):
-                t = np.arange(int(rate * ms / 1000)) / rate
-                env = np.minimum(1.0, np.minimum(t, t[::-1]) * 200)  # 5 ms fade in and out: no clicks
-                notes.append(np.sin(2 * np.pi * f * t) * env)
-            wave = np.concatenate(notes) * 0.35 * min(2.0, self.cfg["volume"] / 100.0)
-            sd.play(np.clip(wave * 32767, -32768, 32767).astype(np.int16), rate,
-                    device=self._speaker_device(), blocking=True)
+            pcm = chime_sound(rate, self.cfg["volume"] / 100.0)
+            # A moment of silence first: speakers that have gone to sleep (power
+            # saving) swallow the start of a sound, which was the whole chime.
+            lead = np.zeros(int(rate * 0.25), np.int16)
+            sd.play(np.concatenate([lead, pcm]), rate, device=self._speaker_device(), blocking=True)
         except Exception as e:  # noqa: BLE001 (no chime then)
-            self.log(f"(no chime: {e})", debug=True)
+            self.log(f"(couldn't play the chime: {e})")
 
     def say(self, text):
         if text.strip():

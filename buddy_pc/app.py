@@ -358,6 +358,7 @@ class Buddy:
                         log(f"(not for me: heard \"Hey Buddy\", but {presence.WHY[look.value]})")
                     if woke:
                         log("wake word: listening")
+                        self.state = "listening"  # his face shows it straight away
                         # That was you saying "Hey Buddy": how loud you are, right now,
                         # through this mic (the question will be about as loud).
                         self.your_level += (loud - self.your_level) * 0.5
