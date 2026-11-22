@@ -944,6 +944,21 @@ def test_log_keeps_two_days():
     assert "today" not in open(os.path.join(d, "buddy-yesterday.log")).read().replace("Today", "")
 
 
+def test_slow_camera_checked_before_the_first_answer():
+    b = _fake_buddy([["[happy] Hi."]], ["hello"])
+
+    class Away:
+        value = "away"
+        done = True
+
+        def result(self, timeout=3.0):
+            return self.value
+
+    b.wake_look = Away()  # (the wake word didn't wait for it)
+    b._conversation()
+    assert b.speaker.said == [] and b.wake_look is None
+
+
 def test_facing_him_or_not():
     from unittest import mock
     from buddy_pc import presence as P
@@ -1046,6 +1061,7 @@ def test_hey_buddy_in_the_middle_of_a_video():
     after = [even(_tone(-34)) for _ in range(10)] + [even(_tone(-70)) for _ in range(20)]  # video turned down
     b = Buddy.__new__(Buddy)
     b.cfg = {}
+    b.state = "idle"
     b.click, b.cancel = threading.Event(), threading.Event()
     b.speaker = FakeSpeaker()
     b.remarks = __import__("queue").Queue()

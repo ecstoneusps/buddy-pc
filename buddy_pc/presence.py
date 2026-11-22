@@ -89,5 +89,9 @@ class Look:
         self._t.join(timeout)
         return self.value if not self._t.is_alive() else None
 
+    @property
+    def done(self):
+        return not self._t.is_alive()
+
 
 WHY = {"away": "you're not at the desk", "turned": "you're turned away"}

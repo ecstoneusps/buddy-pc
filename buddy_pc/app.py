@@ -56,6 +56,7 @@ class Buddy:
     your_level = -24.0  # how loud you usually are (dB), learned as you talk to him
     woke_midstream = False  # caught "Hey Buddy" in the middle of other talk
     just_woke = False  # "Hey Buddy" and a pause: what you say next may already be coming in
+    wake_look = None  # the camera check started with the wake word, if it wasn't done in time
     loopback = None  # what the PC plays (set up in _start)
     wake = None
 
@@ -313,7 +314,7 @@ class Buddy:
             quiet = now - last_voice
             if not woke:
                 length = len(seg) * 0.08
-                due = quiet > 0.5 or (length >= 2.0 and now - last_check >= 1.0)
+                due = quiet > 0.4 or (length >= 2.0 and now - last_check >= 1.0)
                 if due:
                     last_check = now
                     start = max(0, len(seg) - window)
@@ -328,6 +329,7 @@ class Buddy:
                         woke, text = self.wake.check(audio)
                         if woke:
                             look = self._look()  # are you there, facing him? (while he checks the words)
+                            self.state = "listening"  # green straight away (back to idle if it wasn't him)
                         if not woke:
                             log(f"(not for me: heard \"{text}\", {loud:.0f} dB, {time.time() - t0:.2f} s)")
                         else:
@@ -358,9 +360,14 @@ class Buddy:
                                 if played and match_phrase(self.wake.phrase, played) >= 0:
                                     woke = False
                                     log(f"(not for me: the PC itself said it: \"{played}\")")
-                    if woke and look is not None and look.result() in presence.WHY:
+                    # The camera can take a couple of seconds: don't keep you waiting
+                    # for it. If it hasn't answered yet, it's checked before he answers.
+                    if woke and look is not None and look.result(0.4) in presence.WHY:
                         woke = False
                         log(f"(not for me: heard \"Hey Buddy\", but {presence.WHY[look.value]})")
+                    self.wake_look = look if woke and look is not None and not look.done else None
+                    if not woke and self.state == "listening":
+                        self.state = "idle"
                     if woke:
                         log("wake word: listening")
                         self.state = "listening"  # his face shows it straight away
@@ -368,13 +375,13 @@ class Buddy:
                         # through this mic (the question will be about as loud).
                         self.your_level += (loud - self.your_level) * 0.5
                         self.speaker.ducks.hold("conversation", True)  # quieter, so he can hear you
-                        if quiet > 0.5 and len(seg) - start <= 20:
+                        if quiet > 0.4 and len(seg) - start <= 20:
                             self.just_woke = True
                             return None  # just "Hey Buddy": now listen for the question
                         seg = seg[start:]  # from "Hey Buddy" on (not the video before it)
                         self.woke_midstream = True  # (the careful transcription may miss the phrase)
                         continue
-                    if quiet > 0.5:
+                    if quiet > 0.4:
                         seg = []  # someone talking, but not to him
                     elif len(seg) > 60:
                         seg = seg[-window:]  # keep only what the next check needs
@@ -401,7 +408,8 @@ class Buddy:
                 # Straight after "Hey Buddy", keep what came in meanwhile: "Hey Buddy...
                 # learn my voice" in one go, the rest said while he checked and chimed.
                 # (Not while a video was playing: that's the video, until it paused.)
-                keep = self.just_woke and not follow_up and self._pc_quiet(2.0)
+                # (With a video playing, its words are taken out of what he heard later.)
+                keep = self.just_woke and not follow_up
                 self.just_woke = False
                 if not keep:
                     self.mic.drain()
@@ -428,7 +436,9 @@ class Buddy:
             vid = threading.Thread(target=lambda: who.__setitem__(0, voiceid.identify(self.cfg, pcm, log)),
                                    daemon=True)
             vid.start()
-            look = self._look() if follow_up else None  # (the wake word was checked already)
+            # (For the first question: the wake word's camera check, if it was still going.)
+            look = self._look() if follow_up else self.wake_look
+            self.wake_look = None
             t0 = time.time()
             phrase = getattr(self.wake, "phrase", None)
             heard = self.ears.text(pcm, hotwords=phrase.title() if phrase else None, strict=follow_up)
