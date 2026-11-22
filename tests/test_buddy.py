@@ -730,7 +730,7 @@ def _fake_buddy(replies, heard):
     b.speaker = FakeSpeaker()
     b.mic = type("M", (), {"drain": lambda self: None})()
     heard = list(heard)
-    b.endpoint = type("E", (), {"start_window": 6, "hit_limit": False, "loudest": -30.0, "record": lambda self, mic, cancelled=None, ignore_first=0, min_db=-120.0:
+    b.endpoint = type("E", (), {"start_window": 6, "hit_limit": False, "loudest": -30.0, "floor": -90.0, "record": lambda self, mic, cancelled=None, ignore_first=0, min_db=-120.0:
                                 np.zeros(16000, np.int16) if heard else None})()
     b.ears = type("W", (), {"text": lambda self, pcm, hotwords=None, strict=False: heard.pop(0)})()
     replies = list(replies)
@@ -851,6 +851,7 @@ def test_question_said_right_after_hey_buddy_is_kept():
         calls.append((ignore_first, min_db)) or np.zeros(16000, np.int16)
     b.your_level = -38.0  # (as after a "Hey Buddy" at about -40 dB)
     b.just_woke = True
+    b._pc_quiet = lambda seconds: True  # (with a video playing, that would be the video: drained)
     b._conversation()
     assert drained == [] and calls[0][0] == 0.0 and calls[0][1] <= -50
     assert not b.just_woke
@@ -868,6 +869,17 @@ def test_no_remarks_to_an_empty_room():
         with mock.patch.object(P, "check", lambda cfg, log: where):
             assert b._say_remark()
     assert b.speaker.said == ["I'd take over the world."]  # only when you were there (turned is fine)
+
+
+def test_listens_again_when_it_caught_the_video_first():
+    # "Hey Buddy" over a video: what he caught next was the video (before it
+    # paused). He listens again for the question instead of giving up.
+    b = _fake_buddy([["[laughing] Here's one."]], ["No matter what shape, size or era", "tell me a joke"])
+    b.cfg["follow_up"] = False
+    played = iter(["No matter what shape, size, or era, this concept", ""])
+    b._pc_said = lambda seconds: next(played, "")
+    b._conversation()
+    assert b.speaker.said == ["Here's one."]
 
 
 def test_facing_him_or_not():

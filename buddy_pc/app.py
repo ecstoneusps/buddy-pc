@@ -170,6 +170,13 @@ class Buddy:
                                    condition_on_previous_text=False, without_timestamps=True, max_new_tokens=80)
         return " ".join(s.text.strip() for s in segs).strip()
 
+    def _pc_quiet(self, seconds):
+        """True if the PC played nothing (loud enough to matter) in the last
+        `seconds`; False if it did, or if there's no telling."""
+        from .loopback import is_quiet
+        lb = getattr(self, "loopback", None)
+        return lb is not None and lb.ok and is_quiet(lb.recent(seconds))
+
     def _pc_context(self):
         """What's going on on the PC, for his prompt (pc_awareness)."""
         if not self.cfg.get("pc_awareness", True):
@@ -375,6 +382,7 @@ class Buddy:
         follow_ups = 0
         last_heard = ""
         your_level = None  # how loud you were (dB), from the last thing you said
+        heard_again = False  # listened again once already (what he got was the video)
         while True:
             self.state = "listening"
             with_wake = first is not None
@@ -386,7 +394,8 @@ class Buddy:
                     self.speaker.chime()  # "I'm listening" (heard over the room, like the desk Buddy's chirp)
                 # Straight after "Hey Buddy", keep what came in meanwhile: "Hey Buddy...
                 # learn my voice" in one go, the rest said while he checked and chimed.
-                keep = self.just_woke and not follow_up
+                # (Not while a video was playing: that's the video, until it paused.)
+                keep = self.just_woke and not follow_up and self._pc_quiet(2.0)
                 self.just_woke = False
                 if not keep:
                     self.mic.drain()
@@ -442,6 +451,12 @@ class Buddy:
             played = self._pc_said(len(pcm) / 16000)
             if played and same_words(heard, played):
                 log(f"-> that was the PC playing (\"{played}\"), not you; not answering")
+                if not follow_up and not heard_again:
+                    # You did say "Hey Buddy" (it got through every check): he caught
+                    # the video before it paused, not your question. Listen again.
+                    heard_again = True
+                    log("-> listening again for your question")
+                    continue
                 return
             # A follow-up has to be you: a video talking at the same loudness
             # scores clearly as someone else. (Guests say "Hey Buddy" each time.)

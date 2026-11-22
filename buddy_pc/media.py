@@ -107,4 +107,7 @@ def app_name(aumid):
     # "Publisher.Name_hash!App" -> "Name"; "C:\\...\\thing.exe" -> "thing"
     a = (aumid or "an app").split("!")[0].rsplit("\\", 1)[-1]
     a = a.split("_")[0].rsplit(".", 1)[-1] if "_" in a else a
-    return a.removesuffix(".exe").removesuffix(".EXE") or "an app"
+    a = a.removesuffix(".exe").removesuffix(".EXE")
+    if re.search(r"(^|\W)(com-)?[0-9a-f]{6,}($|\W)", a, re.I) and not re.search(r"[g-z]{3}", a.lower()):
+        return ""  # still a code
+    return a or "an app"
