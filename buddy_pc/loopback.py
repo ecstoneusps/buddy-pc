@@ -74,5 +74,20 @@ def same_words(heard, played):
     return sum(w in p for w in h) / len(h) >= 0.6
 
 
+def without_played(heard, played):
+    """What's left of `heard` once the parts that were the PC playing are taken
+    out, sentence by sentence: "Hey Buddy, tell me a joke. We're gonna have to
+    build our own. Yep." with a video saying the last two -> "Hey Buddy, tell
+    me a joke." ("" if it was all the PC.)"""
+    p = set(_words(played))
+    keep = []
+    for part in re.split(r"(?<=[.!?])\s+", heard.strip()):
+        w = _words(part)
+        if w and sum(x in p for x in w) / len(w) >= 0.6:
+            continue  # this sentence was the video
+        keep.append(part)
+    return " ".join(keep).strip()
+
+
 def is_quiet(pcm):
     return len(pcm) == 0 or float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) < 100  # about -50 dB

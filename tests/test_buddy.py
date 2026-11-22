@@ -906,6 +906,17 @@ def test_follow_up_counts_when_the_camera_sees_you():
     assert b.speaker.said == ["Hi.", "Thanks!"]
 
 
+def test_your_question_with_the_video_after_it():
+    b = _fake_buddy([["[laughing] Here's one."]], ["tell me a joke. We're gonna have to build our own. Yep."])
+    b.cfg["follow_up"] = False
+    b._pc_said = lambda seconds: "We're gonna have to build our own. Yep."
+    asked = []
+    chat = b.brain.chat
+    b.brain.chat = lambda h, **k: asked.append(h) or chat(h, **k)
+    b._conversation()
+    assert asked == ["tell me a joke."] and b.speaker.said == ["Here's one."]
+
+
 def test_facing_him_or_not():
     from unittest import mock
     from buddy_pc import presence as P

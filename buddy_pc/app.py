@@ -12,7 +12,7 @@ from . import config as config_mod
 from . import jokes, memory, pcinfo, presence, tools, voiceid
 from .face import Face, expression_for
 from .hearing import loudest_db, match_phrase, strip_phrase
-from .loopback import same_words
+from .loopback import same_words, without_played
 from .textutil import is_screen_request, is_vision_request
 from .textutil import is_cancel, is_clarify, normalize, sentence_end, split_reply
 
@@ -41,6 +41,11 @@ def diary_line(seen, owner):
 def PhraseWakeType():
     from .hearing import PhraseWake
     return PhraseWake
+
+
+def _words_in(text):
+    from .loopback import _words
+    return _words(text)
 
 
 class Buddy:
@@ -450,6 +455,14 @@ class Buddy:
                 return
             # What the PC just played, word for word? Then it wasn't you.
             played = self._pc_said(len(pcm) / 16000)
+            if played and same_words(heard, played):
+                # Your question with the video's last words after it (it pauses a
+                # moment later): keep your part, if there's something left.
+                rest = without_played(heard, played)
+                if len(_words_in(rest)) >= 2:
+                    log(f"-> the end of that was the PC playing (\"{played}\"); answering the rest: \"{rest}\"")
+                    heard = rest
+                    played = ""
             if played and same_words(heard, played):
                 log(f"-> that was the PC playing (\"{played}\"), not you; not answering")
                 if not follow_up and not heard_again:
