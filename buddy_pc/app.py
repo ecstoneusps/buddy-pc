@@ -459,17 +459,20 @@ class Buddy:
                     log("-> listening again for your question")
                     continue
                 return
+            seen = look.result() if look is not None else None
+            if seen in presence.WHY:
+                log(f"-> {presence.WHY[seen]}: not for me; not answering")
+                return
             # A follow-up has to be you: a video talking at the same loudness
             # scores clearly as someone else. (Guests say "Hey Buddy" each time.)
-            if follow_up and self.cfg.get("follow_up_only_you", True):
+            # If the camera sees you facing him, that settles it: a short "Nice"
+            # can score low even when it's you.
+            if follow_up and self.cfg.get("follow_up_only_you", True) and seen != "facing":
                 vid.join(3)
                 score = voiceid.LAST.get("score")
                 if who[0] == "other" and score is not None and score < 0.2:
                     log(f"-> not your voice (score {score:.2f}): a video or someone else; not answering")
                     return
-            if look is not None and look.result() in presence.WHY:
-                log(f"-> {presence.WHY[look.value]}: not for me; not answering")
-                return
             # The same thing again straight after: an echo (or Whisper imagining it), not you.
             if follow_up and normalize(heard) == normalize(last_heard):
                 log("-> heard the same thing again; that's an echo, not you")

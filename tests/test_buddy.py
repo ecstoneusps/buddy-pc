@@ -882,6 +882,30 @@ def test_listens_again_when_it_caught_the_video_first():
     assert b.speaker.said == ["Here's one."]
 
 
+def test_follow_up_counts_when_the_camera_sees_you():
+    # A short "Nice" scored 0.19 ("other"), but you were facing him: it's you.
+    from unittest import mock
+    from buddy_pc import voiceid
+    b = _fake_buddy([["[happy] Hi."], ["[happy] Thanks!"]], ["hello", "nice"])
+    b.cfg["follow_up_only_you"] = True
+
+    class Facing:
+        value = "facing"
+
+        def result(self, timeout=3.0):
+            return self.value
+
+    b._look = Facing
+
+    def other(cfg, pcm, log):
+        voiceid.LAST.update(decision="other", score=0.19)
+        return "other"
+    with mock.patch.object(voiceid, "identify", other):
+        b.max_follow_ups = 1
+        b._conversation()
+    assert b.speaker.said == ["Hi.", "Thanks!"]
+
+
 def test_facing_him_or_not():
     from unittest import mock
     from buddy_pc import presence as P

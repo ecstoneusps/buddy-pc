@@ -104,6 +104,8 @@ class Brain:
         return (self.personality() + "\n\n" + ctx
                 + f"[It's {now.strftime('%A, %B %d, %Y')}, {now.strftime('%I:%M %p').lstrip('0')}.]\n"
                 + limits(self.cfg)
+                + (f"[Never mention any of these, not even in a joke: {', '.join(self.cfg['never_mention'])}.]\n"
+                   if self.cfg.get("never_mention") else "")
                 + notes_block(self.notes()) + self.diary())
 
     # -- talking --------------------------------------------------------------
