@@ -825,6 +825,33 @@ def test_question_said_right_after_hey_buddy_is_kept():
     assert not b.just_woke
 
 
+def test_facing_him_or_not():
+    from unittest import mock
+    from buddy_pc import presence as P
+    lit = np.full((48, 64, 3), 120, np.uint8)
+    with mock.patch.object(P, "faces", lambda f: []):
+        assert P.judge(lit) == "away"
+        assert P.judge(lit * 0) is None  # dark: can't tell, so it doesn't count against you
+        assert P.judge(None) is None  # no camera
+    with mock.patch.object(P, "faces", lambda f: [(0, 0, 50, 60, 0.8, 0.9)]):
+        assert P.judge(lit) == "turned"
+    with mock.patch.object(P, "faces", lambda f: [(0, 0, 50, 60, 0.8, 0.9), (0, 0, 50, 60, 0.1, 0.9)]):
+        assert P.judge(lit) == "facing"
+
+
+def test_follow_up_ignored_when_youre_turned_away():
+    b = _fake_buddy([["[happy] Hi."], ["[happy] Sure."]], ["hello", "and another thing"])
+    class Turned:
+        value = "turned"
+
+        def result(self, timeout=3.0):
+            return self.value
+
+    b._look = Turned  # (only asked for the follow-up: the wake word was checked already)
+    b._conversation()
+    assert b.speaker.said == ["Hi."]
+
+
 def test_vision_questions_look_first():
     from unittest import mock
     from buddy_pc import tools

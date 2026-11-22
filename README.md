@@ -46,6 +46,10 @@ The desk Buddy lives in
   whether it's you or a guest talking (the console shows `voice: owner (score ...)`).
   Say **"learn my voice"** to add three samples through the PC's microphone to
   the voiceprint the desk Buddy made, so he knows you through both microphones.
+- He only answers when the **webcam sees you at the desk, facing him**
+  (`need_to_see_you`): not when you're away or turned around talking to
+  someone. A quick look per "Hey Buddy" (the camera light blinks); nothing
+  is saved. If the camera is busy or the room is dark, he answers anyway.
 - While he talks, **other apps are turned down** (videos, games, music: to
   `duck_others` = 40 % of their volume) and back up when he's done.
   `volume` (up to 300 %) makes him louder without distorting.

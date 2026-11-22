@@ -73,6 +73,8 @@ def load(path=CONFIG_FILE):
         "units": g("units", "us").lower(),
         "vision_model": g("vision_model", ""),
         "camera_index": int(g("camera_index", "0")),
+        # Only answer when the webcam sees you at the desk, facing him
+        "need_to_see_you": _on(g("need_to_see_you", "on")),
         # Voice ID (tools/voiceid in the desk Buddy's project): who's talking
         "voice_id_url": _url(g("voice_id_url", "")),
         # Buddy's eyes (shared diary)

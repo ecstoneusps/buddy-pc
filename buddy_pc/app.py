@@ -9,7 +9,7 @@ import time
 import traceback
 
 from . import config as config_mod
-from . import jokes, memory, pcinfo, tools, voiceid
+from . import jokes, memory, pcinfo, presence, tools, voiceid
 from .face import Face, expression_for
 from .hearing import loudest_db, match_phrase, strip_phrase
 from .loopback import same_words
@@ -302,12 +302,15 @@ class Buddy:
                     start = max(0, len(seg) - window)
                     audio = np.concatenate(seg[start:])
                     t0 = time.time()
+                    look = None
                     loud = loudest_db(audio)
                     # Much quieter than you usually are: a video, the next room.
                     if loud < self.your_level - 14:
                         log(f"(not for me: too quiet, {loud:.0f} dB; you're usually about {self.your_level:.0f} dB)")
                     else:
                         woke, text = self.wake.check(audio)
+                        if woke:
+                            look = self._look()  # are you there, facing him? (while he checks the words)
                         if not woke:
                             log(f"(not for me: heard \"{text}\", {loud:.0f} dB, {time.time() - t0:.2f} s)")
                         else:
@@ -338,6 +341,9 @@ class Buddy:
                                 if played and match_phrase(self.wake.phrase, played) >= 0:
                                     woke = False
                                     log(f"(not for me: the PC itself said it: \"{played}\")")
+                    if woke and look is not None and look.result() in presence.WHY:
+                        woke = False
+                        log(f"(not for me: heard \"Hey Buddy\", but {presence.WHY[look.value]})")
                     if woke:
                         log("wake word: listening")
                         # That was you saying "Hey Buddy": how loud you are, right now,
@@ -402,6 +408,7 @@ class Buddy:
             vid = threading.Thread(target=lambda: who.__setitem__(0, voiceid.identify(self.cfg, pcm, log)),
                                    daemon=True)
             vid.start()
+            look = self._look() if follow_up else None  # (the wake word was checked already)
             t0 = time.time()
             phrase = getattr(self.wake, "phrase", None)
             heard = self.ears.text(pcm, hotwords=phrase.title() if phrase else None, strict=follow_up)
@@ -439,6 +446,9 @@ class Buddy:
                 if who[0] == "other" and score is not None and score < 0.2:
                     log(f"-> not your voice (score {score:.2f}): a video or someone else; not answering")
                     return
+            if look is not None and look.result() in presence.WHY:
+                log(f"-> {presence.WHY[look.value]}: not for me; not answering")
+                return
             # The same thing again straight after: an echo (or Whisper imagining it), not you.
             if follow_up and normalize(heard) == normalize(last_heard):
                 log("-> heard the same thing again; that's an echo, not you")
@@ -498,6 +508,12 @@ class Buddy:
                 return
             time.sleep(self.echo_wait)  # let his own voice die away
             follow_up = True
+
+    def _look(self):
+        """A webcam check of whether you're at the desk facing him, started now (None if off)."""
+        if not self.cfg.get("need_to_see_you"):
+            return None
+        return presence.Look(self.cfg, log)
 
     def _say(self, text):
         """Says something of his own (not from the AI) and waits until he's done."""
