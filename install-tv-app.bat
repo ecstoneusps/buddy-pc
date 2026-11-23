@@ -23,25 +23,43 @@ if not exist platform-tools\adb.exe (
 set ADB=platform-tools\adb.exe
 
 set /p TVIP=The TV's IP address (TV Settings, Network, your network): 
-%ADB% connect %TVIP%:5555
+set TV=%TVIP%:5555
+%ADB% connect %TV% | find "connected to" >nul
+if not errorlevel 1 goto connected
+
+rem Newer TVs use "Wireless debugging": pair once with a code, then connect.
 echo.
-echo If the TV asks "Allow USB debugging?", choose Always allow, then press a key here.
-pause >nul
-%ADB% connect %TVIP%:5555
+echo On the TV: Settings, System, Developer options, Wireless debugging,
+echo "Pair device with pairing code". It shows an IP address:port and a code.
+set /p PAIRADDR=The IP address:port shown under the pairing code: 
+set /p PAIRCODE=The pairing code: 
+%ADB% pair %PAIRADDR% %PAIRCODE%
+echo.
+echo Now the IP address:port shown at the top of the Wireless debugging screen
+set /p TV=(not the pairing one): 
+%ADB% connect %TV% | find "connected to" >nul
+if errorlevel 1 (
+  echo Couldn't connect to the TV. Check that the PC and TV are on the same network.
+  pause
+  exit /b 1
+)
+
+:connected
+echo Connected to the TV. If it asks "Allow debugging?", choose Always allow.
 
 echo Installing Buddy...
-%ADB% -s %TVIP%:5555 install -r BuddyTV.apk
+%ADB% -s %TV% install -r BuddyTV.apk
 if errorlevel 1 (
   echo Installing failed: see the message above.
   pause
   exit /b 1
 )
 rem Let him float over everything (the Apple TV's input too), and use the TV's microphone.
-%ADB% -s %TVIP%:5555 shell appops set com.buddy.tv SYSTEM_ALERT_WINDOW allow
-%ADB% -s %TVIP%:5555 shell pm grant com.buddy.tv android.permission.RECORD_AUDIO
+%ADB% -s %TV% shell appops set com.buddy.tv SYSTEM_ALERT_WINDOW allow
+%ADB% -s %TV% shell pm grant com.buddy.tv android.permission.RECORD_AUDIO
 
 set /p BUDDYURL=Buddy's address, the one your phone uses (like absdesktop.lemur-copperhead.ts.net): 
-%ADB% -s %TVIP%:5555 shell am start -n com.buddy.tv/.MainActivity --es url "%BUDDYURL%"
+%ADB% -s %TV% shell am start -n com.buddy.tv/.MainActivity --es url "%BUDDYURL%"
 
 echo.
 echo Done: Buddy should be on the TV now.
