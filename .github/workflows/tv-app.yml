@@ -1,0 +1,38 @@
+name: Buddy TV app
+
+on:
+  push:
+    branches: [main]
+    paths: ["tv/**", ".github/workflows/tv-app.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # to put the app on the Releases page
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Build the app
+        run: gradle -p tv assembleRelease --no-daemon
+      - name: Put it on the Releases page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp tv/app/build/outputs/apk/release/app-release.apk BuddyTV.apk
+          gh release view tv-app >/dev/null 2>&1 || \
+            gh release create tv-app --title "Buddy TV app" \
+              --notes "The Buddy app for Google TV. Install it with install-tv-app.bat (see README)."
+          gh release upload tv-app BuddyTV.apk --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BuddyTV
+          path: BuddyTV.apk

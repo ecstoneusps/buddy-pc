@@ -399,7 +399,11 @@ $("typeform").addEventListener("submit", e => {
 canvas.addEventListener("click", () => { if (playing) { stopTalking(); face.set("neutral"); } });  // tap his face: hush
 if (TV) {
   document.body.classList.add("tv");
-  status("Talk to Buddy on your phone, or press OK on the remote to talk here.");
+  const q = new URLSearchParams(location.search);
+  if (q.has("corner")) setPip(true);
+  const hint = q.has("app") ? "OK: talk to him here  ·  Back: Buddy in the corner  ·  Hold Back: close Buddy"
+                            : "Talk to Buddy on your phone, or press OK on the remote to talk here.";
+  status(hint);
   tvLoop();
   document.addEventListener("keydown", e => {  // the remote's OK button: talk to him on the TV
     if (e.key === "Enter" || e.keyCode === 23) { e.preventDefault(); rec ? stopRecording() : startRecording(); }

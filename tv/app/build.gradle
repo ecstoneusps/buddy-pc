@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.buddy.tv'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.buddy.tv'
+        minSdk 26          // picture-in-picture
+        targetSdk 34
+        // Each GitHub build a little higher, so it installs over the last one.
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int)
+        versionName "1.0.${System.getenv('GITHUB_RUN_NUMBER') ?: '0'}"
+    }
+
+    // One fixed key (not a secret: it only lets a newer Buddy app install over
+    // an older one), so every build updates the app instead of clashing.
+    signingConfigs {
+        buddy {
+            storeFile file('buddy-tv.keystore')
+            storePassword 'buddytv'
+            keyAlias 'buddytv'
+            keyPassword 'buddytv'
+        }
+    }
+    buildTypes {
+        debug { signingConfig signingConfigs.buddy }
+        release {
+            signingConfig signingConfigs.buddy
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
