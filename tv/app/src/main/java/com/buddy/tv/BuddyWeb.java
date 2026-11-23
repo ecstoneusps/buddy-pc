@@ -6,7 +6,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.webkit.JavascriptInterface;
 import android.os.Handler;
@@ -95,6 +97,27 @@ final class BuddyWeb {
                     return "not allowed (run install-tv-app.bat again)";
                 }
                 return recorder.start();
+            }
+
+            private AudioFocusRequest focus;
+
+            /** While he talks, everything else on the TV is turned down (like PC Buddy). */
+            @JavascriptInterface
+            public void speaking(boolean on) {
+                AudioManager am = c.getSystemService(AudioManager.class);
+                if (on && focus == null) {
+                    focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                            .setAudioAttributes(new AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                            .setWillPauseWhenDucked(false)
+                            .build();
+                    am.requestAudioFocus(focus);
+                } else if (!on && focus != null) {
+                    am.abandonAudioFocusRequest(focus);
+                    focus = null;
+                }
+                lastAwake = System.currentTimeMillis();
             }
 
             @JavascriptInterface

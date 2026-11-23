@@ -254,7 +254,9 @@ function addWords(cls, text) {
   $("words").appendChild(d); $("words").scrollTop = 1e6;
   while ($("words").children.length > 12) $("words").firstChild.remove();
 }
-function stopTalking() { if (playing) { try { playing.stop(); } catch (e) {} playing = null; } }
+// (The TV app: other sound on the TV is turned down while he talks.)
+const tvSpeaking = on => { try { if (window.BuddyTV && BuddyTV.speaking) BuddyTV.speaking(on); } catch (e) {} };
+function stopTalking() { if (playing) { try { playing.stop(); } catch (e) {} playing = null; tvSpeaking(false); } }
 
 async function show(reply) {
   if (reply.error) { face.set("confused"); status(reply.error); setTimeout(() => face.set("neutral"), 2500); return; }
@@ -272,7 +274,8 @@ async function show(reply) {
     if (audioCtx.state === "suspended") await audioCtx.resume();
     const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(analyser);
     playing = src;
-    src.onended = () => { if (playing === src) playing = null; lingerTimer = setTimeout(() => face.set("neutral"), 1500); };
+    src.onended = () => { if (playing === src) { playing = null; tvSpeaking(false); } lingerTimer = setTimeout(() => face.set("neutral"), 1500); };
+    tvSpeaking(true);
     src.start();
   } else lingerTimer = setTimeout(() => face.set("neutral"), 3000);
 }
