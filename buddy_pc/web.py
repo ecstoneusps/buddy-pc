@@ -23,7 +23,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
 HERE = os.path.dirname(__file__)
-MAX_UPLOAD = 8_000_000  # about a minute of phone audio is far less than this
+MAX_UPLOAD = 12_000_000  # a recording and a photo, as text, are far less than this
+LOOK_DEFAULT = "What do you see? React to it."
 
 
 def wav_bytes(rate, pcm):
@@ -67,35 +68,56 @@ class Web:
         log(f"Buddy's phone app: http://localhost:{port} on this PC (and through \"tailscale serve --bg {port}\" "
             "on your phone)")
 
-    def reply(self, heard):
+    def look(self, jpg, heard):
+        """What he sees in the phone's photo, for his prompt (and Buddy's eyes' diary)."""
+        from . import tools
+        from .app import diary_line
+        if not self.cfg.get("vision_model"):
+            return "[Your owner sent a photo from their phone, but you have no way to see pictures.]\n"
+        try:
+            seen = tools.look(self.cfg, heard, self.log, jpg=jpg)
+        except Exception as e:  # noqa: BLE001 (answer anyway, honestly)
+            self.log(f"phone: couldn't look at the photo: {e}")
+            return "[Your owner sent a photo from their phone, but you couldn't see it just now.]\n"
+        line = diary_line(seen, self.cfg.get("owner", "my owner"))
+        shared = getattr(self.buddy.brain, "shared", None)
+        if line and shared is not None:
+            shared.saw("Out and about: " + line)
+        return (f"[Your owner just showed you something with their phone's camera. {seen} Answer from that "
+                "alone; if it doesn't show what was asked, say you can't quite tell.]\n")
+
+    def reply(self, heard, jpg=None):
         """What he says back (emotion, words), the way he answers at the desk."""
         from . import jokes, memory
         from .textutil import is_cancel, split_reply
         b = self.buddy
-        kind, fact = memory.parse_command(heard)
+        kind, fact = memory.parse_command(heard) if jpg is None else (None, None)
         if kind:
             text = b._memory(kind, fact)
         elif is_cancel(heard):
             return "neutral", ""
         else:
             extra = "[You're talking through the Buddy app on your owner's phone (they may be away from home).]\n"
+            if jpg is not None:
+                extra += self.look(jpg, heard)
             joke = jokes.wanted(heard)
             if joke:
                 extra += jokes.hint()
-            text = "".join(b.brain.chat(heard, extra=extra))
+            text = "".join(b.brain.chat(heard, extra=extra, looked=jpg is not None))
             if joke:
                 jokes.told(split_reply(text)[1])
         emotion, speech = split_reply(text)
         return emotion or "happy", speech
 
-    def answer(self, heard):
+    def answer(self, heard, jpg=None):
         """{heard, emotion, text, audio (WAV, base64)} for the page."""
         from .face import expression_for
         from .voice import boost, level_gain, synthesize
         with self.lock:
             t0 = time.time()
-            emotion, speech = self.reply(heard)
-            self.log(f"phone: \"{heard}\" -> [{emotion}] \"{speech}\" ({time.time() - t0:.1f} s)")
+            emotion, speech = self.reply(heard, jpg)
+            self.log(f"phone{' (with a photo)' if jpg else ''}: \"{heard}\" -> [{emotion}] \"{speech}\" "
+                     f"({time.time() - t0:.1f} s)")
             audio = None
             if speech:
                 try:
@@ -155,21 +177,30 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "nothing sent, or too much"}, 400)
         data = self.rfile.read(size)
         try:
-            if path == "/api/talk":  # a recording from the phone
+            if path == "/api/talk":  # a recording from the phone (and maybe a photo)
+                jpg = None
+                if (self.headers.get("Content-Type") or "").startswith("application/json"):
+                    msg = json.loads(data)
+                    data = base64.b64decode(msg.get("audio") or "")
+                    jpg = base64.b64decode(msg["image"]) if msg.get("image") else None
                 try:
-                    pcm = decode(data)
+                    pcm = decode(data) if data else np.zeros(0, np.int16)
                 except Exception as e:  # noqa: BLE001
                     self.web.log(f"phone: couldn't read the recording ({type(e).__name__}: {e})")
                     return self._json({"error": "couldn't read that recording"}, 400)
                 heard = self.web.buddy.ears.text(pcm) if len(pcm) > 16000 * 0.3 else ""
+                if not heard and jpg is not None:
+                    heard = LOOK_DEFAULT  # (a photo and nothing said: just look)
                 if not heard:
                     return self._json({"heard": "", "emotion": "confused", "text": "", "audio": None})
-                return self._json(self.web.answer(heard))
-            if path == "/api/say":  # typed
-                text = str(json.loads(data).get("text", "")).strip()[:500]
+                return self._json(self.web.answer(heard, jpg))
+            if path == "/api/say":  # typed (and maybe a photo)
+                msg = json.loads(data)
+                jpg = base64.b64decode(msg["image"]) if msg.get("image") else None
+                text = str(msg.get("text", "")).strip()[:500] or (LOOK_DEFAULT if jpg else "")
                 if not text:
                     return self._json({"error": "nothing typed"}, 400)
-                return self._json(self.web.answer(text))
+                return self._json(self.web.answer(text, jpg))
         except Exception as e:  # noqa: BLE001 (tell the page, keep serving)
             self.web.log(f"phone: something went wrong: {type(e).__name__}: {e}")
             return self._json({"error": "Buddy had a problem answering that"}, 500)

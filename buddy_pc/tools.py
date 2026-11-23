@@ -155,15 +155,22 @@ def snapshot(index):
         cam.release()
 
 
-def look(cfg, question, log):
+def look(cfg, question, log, jpg=None):
+    """What the vision model sees: through the webcam, or in `jpg` (a photo
+    from the phone app)."""
     import time
-    jpg = snapshot(cfg["camera_index"])
-    if jpg is None:  # Buddy's eyes may have it open this second
-        time.sleep(1.5)
+    phone = jpg is not None
+    if not phone:
         jpg = snapshot(cfg["camera_index"])
+        if jpg is None:  # Buddy's eyes may have it open this second
+            time.sleep(1.5)
+            jpg = snapshot(cfg["camera_index"])
     if jpg is None:
         return "You couldn't get a picture from your camera just now."
-    prompt = (f"This is a webcam picture of {cfg['owner']} at their desk. {question} Answer briefly and only "
+    what = (f"This is a photo from {cfg['owner']}'s phone camera (they may be away from home; it may show "
+            f"{cfg['owner']} or what they're pointing it at)." if phone
+            else f"This is a webcam picture of {cfg['owner']} at their desk.")
+    prompt = (f"{what} {question} Answer briefly and only "
               "from what you can clearly see; if you can't tell, say so. To count fingers, count each raised "
               "finger one by one.")
     body = {"model": cfg["vision_model"], "stream": False, "keep_alive": "10m",
@@ -180,5 +187,5 @@ def look(cfg, question, log):
             time.sleep(1.0)
     r.raise_for_status()
     seen = r.json().get("message", {}).get("content", "").strip()
-    log(f"(looked: {seen})")
-    return f"Through your camera you see: {seen}"
+    log(f"(looked{' through the phone' if phone else ''}: {seen})")
+    return f"Through {'the phone' if phone else 'your'} camera you see: {seen}"

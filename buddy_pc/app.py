@@ -29,7 +29,7 @@ def diary_line(seen, owner):
     """'Through your camera you see: You are holding an iPhone with... There is
     no clear...' -> 'Eric is holding an iPhone with...' (the first sentence)."""
     import re
-    t = seen.split(":", 1)[1].strip() if seen.startswith("Through your camera") else seen.strip()
+    t = seen.split(":", 1)[1].strip() if seen.startswith("Through ") else seen.strip()
     t = re.split(r"(?<=[.!?])\s", t, maxsplit=1)[0].rstrip(".!? ")
     t = re.sub(r"^(you are|you're)\b", f"{owner} is", t, flags=re.I)
     t = re.sub(r"^you\b", owner, t, flags=re.I)

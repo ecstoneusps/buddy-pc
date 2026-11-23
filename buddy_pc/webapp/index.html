@@ -35,15 +35,39 @@
     background: var(--panel); color: var(--text); font-size: 16px; }
   #send { padding: 0 16px; border-radius: 22px; border: 0; background: var(--panel); color: var(--accent);
     font-size: 16px; font-weight: 600; }
-  body.tv #controls, body.tv #words { display: none; }
+  #look { flex: 0 0 auto; width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--accent);
+    background: var(--panel); color: var(--accent); font-size: 13px; font-weight: 600; }
+  #photo { display: none; align-items: center; gap: 10px; color: var(--dim); font-size: 14px; }
+  #photo.on { display: flex; }
+  #photo img { height: 48px; border-radius: 8px; }
+  #photo button { border: 0; background: var(--panel); color: var(--text); border-radius: 14px; padding: 4px 10px; }
+  #cam { display: none; position: fixed; inset: 0; background: #000; z-index: 5; flex-direction: column; }
+  #cam.on { display: flex; }
+  #cam video { flex: 1 1 0; min-height: 0; width: 100%; object-fit: cover; }
+  #cambar { display: flex; justify-content: space-around; align-items: center;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+  #cambar button { background: none; border: 0; color: #fff; font-size: 17px; }
+  #shutter { width: 74px; height: 74px; border-radius: 50%; border: 5px solid #fff !important;
+    background: #fff !important; box-shadow: inset 0 0 0 4px #000; }
+  body.tv #controls, body.tv #words, body.tv #photo { display: none; }
 </style>
 </head>
 <body>
 <div id="facebox"><canvas id="face"></canvas></div>
 <div id="status">Tap Talk, say something, tap again to send.</div>
 <div id="words"></div>
+<div id="photo"><img alt="Your photo"><span>Ask about it, or tap Send.</span><button id="unphoto">Remove</button></div>
+<div id="cam">
+  <video id="preview" playsinline muted autoplay></video>
+  <div id="cambar">
+    <button id="camclose">Close</button>
+    <button id="shutter" aria-label="Take the picture"></button>
+    <button id="flip">Flip</button>
+  </div>
+</div>
 <div id="controls">
   <button id="talk" aria-label="Talk">Talk</button>
+  <button id="look" aria-label="Show Buddy something with the camera">Look</button>
   <form id="typeform" autocomplete="off">
     <input id="typed" placeholder="Or type to Buddy" enterkeyhint="send">
     <button id="send" type="submit">Send</button>
@@ -243,8 +267,49 @@ async function show(reply) {
   } else lingerTimer = setTimeout(() => face.set("neutral"), 3000);
 }
 
+// ---- Showing him something with the camera -------------------------------
+let photo = null, camStream = null, facing = "environment";
+async function openCamera() {
+  stopTalking();
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 } } });
+  } catch (e) { status("Buddy needs the camera to look: allow it for this site in Settings."); return; }
+  $("preview").srcObject = camStream; $("cam").classList.add("on");
+}
+function closeCamera() {
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null; $("cam").classList.remove("on");
+}
+function takePicture() {
+  const v = $("preview"), w = v.videoWidth, h = v.videoHeight;
+  if (!w) return;
+  const k = Math.min(1, 1280 / Math.max(w, h)), c = document.createElement("canvas");
+  c.width = Math.round(w * k); c.height = Math.round(h * k);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  photo = c.toDataURL("image/jpeg", 0.82);
+  closeCamera();
+  $("photo").querySelector("img").src = photo; $("photo").classList.add("on");
+  face.set("surprised"); setTimeout(() => face.set("neutral"), 1200);
+  status("");
+}
+function takePhoto() {  // the photo to send (base64), and no more photo after
+  const p = photo ? photo.split(",")[1] : null;
+  photo = null; $("photo").classList.remove("on");
+  return p;
+}
+$("look").addEventListener("click", () => { unlockAudio(); openCamera(); });
+$("camclose").addEventListener("click", closeCamera);
+$("shutter").addEventListener("click", takePicture);
+$("flip").addEventListener("click", () => { facing = facing === "environment" ? "user" : "environment"; closeCamera(); openCamera(); });
+$("unphoto").addEventListener("click", () => { takePhoto(); });
+
+const toBase64 = blob => new Promise((ok, fail) => {
+  const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = fail; r.readAsDataURL(blob);
+});
+
 async function send(url, body, type) {
-  $("talk").disabled = true; face.set("thinking"); status("Thinking...");
+  $("talk").disabled = true; face.set("thinking");
+  status(body.includes && body.includes('"image":"') ? "Looking..." : "Thinking...");
   try {
     const r = await fetch(url, { method: "POST", body, headers: { "Content-Type": type } });
     await show(await r.json());
@@ -268,8 +333,9 @@ async function startRecording() {
     audioMode("playback");  // back to the loudspeaker for his answer
     const blob = new Blob(chunks, { type: rec.mimeType || "audio/mp4" });
     rec = null;
-    if (blob.size < 1000) { face.set("neutral"); status("That was too short. Tap Talk and speak."); return; }
-    send("/api/talk", blob, blob.type || "application/octet-stream");
+    if (blob.size < 1000 && !photo) { face.set("neutral"); status("That was too short. Tap Talk and speak."); return; }
+    toBase64(blob).then(audio => send("/api/talk", JSON.stringify({ audio, type: blob.type, image: takePhoto() }),
+                                      "application/json"));
   };
   rec.start();
   face.set("listening"); status("Listening... tap again when you're done.");
@@ -284,9 +350,9 @@ function stopRecording() {
 $("talk").addEventListener("click", () => rec ? stopRecording() : startRecording());
 $("typeform").addEventListener("submit", e => {
   e.preventDefault(); unlockAudio(); stopTalking();
-  const text = $("typed").value.trim(); if (!text) return;
+  const text = $("typed").value.trim(); if (!text && !photo) return;
   $("typed").value = ""; $("typed").blur();
-  send("/api/say", JSON.stringify({ text }), "application/json");
+  send("/api/say", JSON.stringify({ text, image: takePhoto() }), "application/json");
 });
 canvas.addEventListener("click", () => { if (playing) { stopTalking(); face.set("neutral"); } });  // tap his face: hush
 if (new URLSearchParams(location.search).has("tv")) document.body.classList.add("tv");

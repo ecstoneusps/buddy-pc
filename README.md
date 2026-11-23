@@ -59,6 +59,9 @@ The desk Buddy lives in
   2. On the iPhone (Tailscale connected), open that address in Safari,
      tap Share, then **Add to Home Screen**. Allow the microphone when asked.
   3. Tap **Talk**, speak, tap **Done**. Or type. Tap his face to hush him.
+  4. Tap **Look** to show him something with the phone's camera (Flip for the
+     front camera), then ask about it (Talk or type), or just tap Send. What
+     he sees goes in Buddy's eyes' diary too ("Out and about: ...").
   To see him on the TV, AirPlay the phone to the Apple TV (Control Center,
   Screen Mirroring): his face and voice go to the TV, you talk into the phone.
 - While he talks, **other apps are turned down** (videos, games, music: to

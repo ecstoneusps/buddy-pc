@@ -996,6 +996,35 @@ def test_phone_app():
     w.server.shutdown()
 
 
+def test_phone_app_photo():
+    import base64
+    import urllib.request
+    from unittest import mock
+    from buddy_pc import tools, voice, web
+    b = _fake_buddy([["[surprised] A red cup!"]], [])
+    asked, saw = [], []
+    chat = b.brain.chat
+    b.brain.chat = lambda h, extra="", looked=False: asked.append((h, extra, looked)) or chat(h, extra, looked)
+    b.brain.shared = type("S", (), {"saw": lambda self, line: saw.append(line)})()
+    cfg = {"web_port": 0, "kokoro_host": "x", "kokoro_port": 1, "voice": "v", "vision_model": "vm", "owner": "Eric"}
+    w = web.Web(b, cfg, lambda *a, **k: None)
+    url = f"http://127.0.0.1:{w.server.server_address[1]}"
+    looked = []
+
+    def look(cfg, question, log, jpg=None):
+        looked.append((question, jpg))
+        return "Through the phone camera you see: You are holding a red cup."
+    body = json.dumps({"text": "", "image": base64.b64encode(b"JPEGDATA").decode()}).encode()
+    req = urllib.request.Request(url + "/api/say", data=body, headers={"Content-Type": "application/json"})
+    with mock.patch.object(voice, "synthesize", lambda *a: (24000, np.zeros(2400, np.int16))), \
+            mock.patch.object(tools, "look", look):
+        r = json.loads(urllib.request.urlopen(req).read())
+    w.server.shutdown()
+    assert r["text"] == "A red cup!" and looked == [(web.LOOK_DEFAULT, b"JPEGDATA")]
+    assert asked[0][2] is True and "red cup" in asked[0][1]  # answered from what he saw
+    assert saw == ["Out and about: Eric is holding a red cup"]
+
+
 def test_facing_him_or_not():
     from unittest import mock
     from buddy_pc import presence as P
