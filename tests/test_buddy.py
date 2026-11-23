@@ -996,6 +996,27 @@ def test_phone_app():
     w.server.shutdown()
 
 
+def test_phone_asks_tv_answers():
+    import urllib.request
+    from unittest import mock
+    from buddy_pc import voice, web
+    b = _fake_buddy([["[happy] Hello from the TV."]], [])
+    w = web.Web(b, {"web_port": 0, "kokoro_host": "x", "kokoro_port": 1, "voice": "v"}, lambda *a, **k: None)
+    url = f"http://127.0.0.1:{w.server.server_address[1]}"
+    get = lambda p: json.loads(urllib.request.urlopen(url + p).read())
+    assert get("/api/status") == {"tv": False}
+    start = get("/api/events?after=-1")  # the TV app opens
+    assert start["events"] == [] and get("/api/status") == {"tv": True}
+    req = urllib.request.Request(url + "/api/say", data=json.dumps({"text": "hi", "to_tv": True}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with mock.patch.object(voice, "synthesize", lambda *a: (24000, np.zeros(2400, np.int16))):
+        r = json.loads(urllib.request.urlopen(req).read())
+    assert r["on_tv"] and r["audio"] is None and r["text"] == "Hello from the TV."
+    got = get(f"/api/events?after={start['last']}")["events"]
+    assert [e["kind"] for e in got] == ["thinking", "reply"] and got[1]["audio"]
+    w.server.shutdown()
+
+
 def test_phone_app_photo():
     import base64
     import urllib.request

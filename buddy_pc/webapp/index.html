@@ -49,12 +49,19 @@
   #cambar button { background: none; border: 0; color: #fff; font-size: 17px; }
   #shutter { width: 74px; height: 74px; border-radius: 50%; border: 5px solid #fff !important;
     background: #fff !important; box-shadow: inset 0 0 0 4px #000; }
-  body.tv #controls, body.tv #words, body.tv #photo { display: none; }
+  #tvswitch { display: none; align-items: center; gap: 8px; color: var(--dim); font-size: 14px; justify-content: center; }
+  #tvswitch.on { display: flex; }
+  #tvswitch input { width: 20px; height: 20px; accent-color: var(--accent); }
+  body.tv { padding: 0; }
+  body.tv #controls, body.tv #words, body.tv #photo, body.tv #tvswitch { display: none; }
+  body.tv #status { font-size: 3.2vh; padding: 0 4vw 3vh; color: #cfd6e3; }
+  body.pip #status { display: none; }
 </style>
 </head>
 <body>
 <div id="facebox"><canvas id="face"></canvas></div>
 <div id="status">Tap Talk, say something, tap again to send.</div>
+<label id="tvswitch"><input type="checkbox" id="ontv" checked> Answer on the TV</label>
 <div id="words"></div>
 <div id="photo"><img alt="Your photo"><span>Ask about it, or tap Send.</span><button id="unphoto">Remove</button></div>
 <div id="cam">
@@ -307,12 +314,45 @@ const toBase64 = blob => new Promise((ok, fail) => {
   const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = fail; r.readAsDataURL(blob);
 });
 
+// ---- The TV app ---------------------------------------------------------------
+const TV = new URLSearchParams(location.search).has("tv");
+const onTV = () => !TV && $("tvswitch").classList.contains("on") && $("ontv").checked;
+try { $("ontv").checked = localStorage.getItem("ontv") !== "0"; } catch (e) {}
+$("ontv").addEventListener("change", () => { try { localStorage.setItem("ontv", $("ontv").checked ? "1" : "0"); } catch (e) {} });
+function tellTV(state) {
+  if (onTV()) fetch("/api/state", { method: "POST", body: JSON.stringify({ state }), headers: { "Content-Type": "application/json" } }).catch(() => {});
+}
+async function checkTV() {  // (the phone) is the TV app open? then offer to answer there
+  try { const r = await (await fetch("/api/status")).json(); $("tvswitch").classList.toggle("on", !!r.tv); } catch (e) {}
+}
+async function tvLoop() {  // (the TV) show and say what the phone asked for
+  let after = -1;
+  for (;;) {
+    try {
+      const r = await (await fetch("/api/events?after=" + after)).json();
+      after = r.last;
+      for (const ev of r.events) {
+        if (ev.kind === "reply") { unlockAudio(); await show(ev); status(ev.text || ""); }
+        else if (ev.kind === "listening") { stopTalking(); face.set("listening"); status("Listening..."); }
+        else if (ev.kind === "thinking") { face.set("thinking"); status("Thinking..."); }
+        else if (ev.kind === "idle") { face.set("neutral"); status(""); }
+      }
+    } catch (e) { status("Can't reach Buddy..."); await new Promise(ok => setTimeout(ok, 5000)); }
+  }
+}
+window.setPip = on => document.body.classList.toggle("pip", !!on);  // (the TV app: in the corner window)
+
 async function send(url, body, type) {
   $("talk").disabled = true; face.set("thinking");
   status(body.includes && body.includes('"image":"') ? "Looking..." : "Thinking...");
   try {
     const r = await fetch(url, { method: "POST", body, headers: { "Content-Type": type } });
-    await show(await r.json());
+    const reply = await r.json();
+    if (reply.on_tv) {  // said on the TV: just the words here
+      addWords("you", reply.heard ? "You: " + reply.heard : ""); addWords("him", reply.text);
+      face.set(reply.emotion || "happy"); status("Buddy answered on the TV.");
+      setTimeout(() => face.set("neutral"), 2500);
+    } else await show(reply);
   } catch (e) {
     face.set("sad"); status("Can't reach Buddy. Is the PC on, and Tailscale connected?");
     setTimeout(() => face.set("neutral"), 3000);
@@ -333,12 +373,14 @@ async function startRecording() {
     audioMode("playback");  // back to the loudspeaker for his answer
     const blob = new Blob(chunks, { type: rec.mimeType || "audio/mp4" });
     rec = null;
-    if (blob.size < 1000 && !photo) { face.set("neutral"); status("That was too short. Tap Talk and speak."); return; }
-    toBase64(blob).then(audio => send("/api/talk", JSON.stringify({ audio, type: blob.type, image: takePhoto() }),
+    if (blob.size < 1000 && !photo) { face.set("neutral"); status("That was too short. Tap Talk and speak.");
+      tellTV("idle"); return; }
+    toBase64(blob).then(audio => send("/api/talk", JSON.stringify({ audio, type: blob.type, image: takePhoto(), to_tv: onTV() }),
                                       "application/json"));
   };
   rec.start();
-  face.set("listening"); status("Listening... tap again when you're done.");
+  face.set("listening"); status(TV ? "Listening... press OK when you're done." : "Listening... tap again when you're done.");
+  tellTV("listening");
   $("talk").classList.add("on"); $("talk").textContent = "Done";
   autoStop = setTimeout(stopRecording, 20000);
 }
@@ -352,10 +394,17 @@ $("typeform").addEventListener("submit", e => {
   e.preventDefault(); unlockAudio(); stopTalking();
   const text = $("typed").value.trim(); if (!text && !photo) return;
   $("typed").value = ""; $("typed").blur();
-  send("/api/say", JSON.stringify({ text, image: takePhoto() }), "application/json");
+  send("/api/say", JSON.stringify({ text, image: takePhoto(), to_tv: onTV() }), "application/json");
 });
 canvas.addEventListener("click", () => { if (playing) { stopTalking(); face.set("neutral"); } });  // tap his face: hush
-if (new URLSearchParams(location.search).has("tv")) document.body.classList.add("tv");
+if (TV) {
+  document.body.classList.add("tv");
+  status("Talk to Buddy on your phone, or press OK on the remote to talk here.");
+  tvLoop();
+  document.addEventListener("keydown", e => {  // the remote's OK button: talk to him on the TV
+    if (e.key === "Enter" || e.keyCode === 23) { e.preventDefault(); rec ? stopRecording() : startRecording(); }
+  });
+} else { checkTV(); setInterval(checkTV, 10000); }
 </script>
 </body>
 </html>

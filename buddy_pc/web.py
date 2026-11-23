@@ -61,12 +61,36 @@ class Web:
     def __init__(self, buddy, cfg, log):
         self.buddy, self.cfg, self.log = buddy, cfg, log
         self.lock = threading.Lock()  # one question at a time
+        # For the TV app: what to show and say there (the phone asks, the TV answers).
+        self.events, self.last_event = [], 0
+        self.changed = threading.Condition()
+        self.tv_seen = 0.0
         port = int(cfg.get("web_port", 8770))
         handler = type("H", (Handler,), {"web": self})
         self.server = ThreadingHTTPServer(("127.0.0.1", port), handler)
         threading.Thread(target=self.server.serve_forever, daemon=True, name="web").start()
         log(f"Buddy's phone app: http://localhost:{port} on this PC (and through \"tailscale serve --bg {port}\" "
             "on your phone)")
+
+    def tv_connected(self):
+        return time.time() - self.tv_seen < 40
+
+    def push(self, kind, **data):
+        """Something for the TV: "listening", "thinking", or a "reply" to show and say."""
+        with self.changed:
+            self.last_event += 1
+            self.events = (self.events + [dict(data, kind=kind, id=self.last_event)])[-20:]
+            self.changed.notify_all()
+
+    def wait_events(self, after, timeout=25.0):
+        """The TV's long poll: what's new after `after` (-1: nothing old, just where things are)."""
+        self.tv_seen = time.time()
+        with self.changed:
+            if after >= 0 and self.last_event <= after:
+                self.changed.wait(timeout)
+            self.tv_seen = time.time()
+            new = [e for e in self.events if e["id"] > after] if after >= 0 else []
+            return {"events": new, "last": self.last_event}
 
     def look(self, jpg, heard):
         """What he sees in the phone's photo, for his prompt (and Buddy's eyes' diary)."""
@@ -109,8 +133,19 @@ class Web:
         emotion, speech = split_reply(text)
         return emotion or "happy", speech
 
-    def answer(self, heard, jpg=None):
-        """{heard, emotion, text, audio (WAV, base64)} for the page."""
+    def answer(self, heard, jpg=None, to_tv=False):
+        """{heard, emotion, text, audio (WAV, base64)} for the page; with
+        `to_tv` (and the TV app open), said on the TV instead."""
+        to_tv = to_tv and self.tv_connected()
+        if to_tv:
+            self.push("thinking")
+        out = self._answer(heard, jpg)
+        if to_tv:
+            self.push("reply", **out)
+            out = dict(out, audio=None, on_tv=True)
+        return out
+
+    def _answer(self, heard, jpg=None):
         from .face import expression_for
         from .voice import boost, level_gain, synthesize
         with self.lock:
@@ -149,7 +184,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(obj).encode(), "application/json")
 
     def do_GET(self):
-        path = self.path.split("?", 1)[0]
+        path, _, query = self.path.partition("?")
+        if path == "/api/events":  # the TV app waiting for something to show
+            from urllib.parse import parse_qs
+            after = int((parse_qs(query).get("after") or ["-1"])[0])
+            return self._json(self.web.wait_events(after))
+        if path == "/api/status":
+            return self._json({"tv": self.web.tv_connected()})
         if path in ("/", "/index.html"):
             with open(os.path.join(HERE, "webapp", "index.html"), encoding="utf-8") as f:
                 page = f.read().replace("/*FACE*/null", json.dumps(face_tables()))
@@ -178,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
         data = self.rfile.read(size)
         try:
             if path == "/api/talk":  # a recording from the phone (and maybe a photo)
-                jpg = None
+                jpg, msg = None, {}
                 if (self.headers.get("Content-Type") or "").startswith("application/json"):
                     msg = json.loads(data)
                     data = base64.b64decode(msg.get("audio") or "")
@@ -193,14 +234,18 @@ class Handler(BaseHTTPRequestHandler):
                     heard = LOOK_DEFAULT  # (a photo and nothing said: just look)
                 if not heard:
                     return self._json({"heard": "", "emotion": "confused", "text": "", "audio": None})
-                return self._json(self.web.answer(heard, jpg))
+                return self._json(self.web.answer(heard, jpg, to_tv=bool(msg.get("to_tv"))))
             if path == "/api/say":  # typed (and maybe a photo)
                 msg = json.loads(data)
                 jpg = base64.b64decode(msg["image"]) if msg.get("image") else None
                 text = str(msg.get("text", "")).strip()[:500] or (LOOK_DEFAULT if jpg else "")
                 if not text:
                     return self._json({"error": "nothing typed"}, 400)
-                return self._json(self.web.answer(text, jpg))
+                return self._json(self.web.answer(text, jpg, to_tv=bool(msg.get("to_tv"))))
+            if path == "/api/state":  # the phone is listening to you: the TV shows it too
+                if self.web.tv_connected():
+                    self.web.push(str(json.loads(data).get("state", ""))[:20])
+                return self._json({"ok": True})
         except Exception as e:  # noqa: BLE001 (tell the page, keep serving)
             self.web.log(f"phone: something went wrong: {type(e).__name__}: {e}")
             return self._json({"error": "Buddy had a problem answering that"}, 500)
