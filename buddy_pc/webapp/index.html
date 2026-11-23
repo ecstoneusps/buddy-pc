@@ -194,7 +194,7 @@ if (!ctx.roundRect) {  // (older iPhones)
     this.arcTo(x, y + h, x, y, r); this.arcTo(x, y, x + w, y, r); this.closePath();
   };
 }
-let last = performance.now();
+let last = performance.now(), lastAwake = 0;
 function frame(now) {
   try { drawFrame(now); } catch (e) { status("Face problem: " + e.message); }
   requestAnimationFrame(frame);
@@ -209,6 +209,9 @@ function drawFrame(now) {
   const fw = Math.min(W, H * 4 / 3), fh = fw * 3 / 4;
   ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
   ctx.save(); ctx.translate((W - fw) / 2, (H - fh) / 2); face.draw(ctx, fw, fh); ctx.restore();
+  if (window.BuddyTV && BuddyTV.awake && (face.expr !== "neutral" || playing || rec) && now - lastAwake > 1000) {
+    lastAwake = now; BuddyTV.awake();  // (the TV app: he's in use, don't hide him)
+  }
   document.documentElement.style.setProperty("--accent", `rgb(${face.cur.eyeR|0},${face.cur.eyeG|0},${face.cur.eyeB|0})`);
 }
 requestAnimationFrame(frame);
@@ -441,7 +444,7 @@ if (TV) {
   document.body.classList.add("tv");
   const q = new URLSearchParams(location.search);
   if (q.has("corner")) setPip(true);
-  const hint = q.has("app") ? "OK or your Talk to Buddy button: talk  ·  Back: Buddy in the corner  ·  Hold Back: close"
+  const hint = q.has("app") ? "Mic button or OK: talk  ·  Back: corner  ·  Hold Back: close  ·  Menu: auto-hide on/off"
                             : "Talk to Buddy on your phone, or press OK on the remote to talk here.";
   status(hint);
   tvLoop();

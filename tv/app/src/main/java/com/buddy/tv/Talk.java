@@ -23,6 +23,9 @@ final class Talk {
             c.startForegroundService(i);
         } else if (MainActivity.current != null) {
             MainActivity.current.toggleTalk();
+        } else if (android.provider.Settings.canDrawOverlays(c) && !BuddyWeb.savedUrl(c).isEmpty()) {
+            // Not open (the TV was off, say): straight into the corner, listening.
+            c.startForegroundService(new Intent(c, OverlayService.class).putExtra("talk", true));
         } else {
             Intent i = new Intent(c, MainActivity.class).putExtra("talk", true)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

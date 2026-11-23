@@ -7,7 +7,10 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.PixelFormat;
+import android.animation.ValueAnimator;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.IBinder;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
@@ -21,6 +24,35 @@ public class OverlayService extends Service {
     static volatile boolean running;
     private WindowManager windows;
     private WebView web;
+    private WindowManager.LayoutParams params;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean hidden;
+    private static final long HIDE_AFTER_MS = 60_000;
+
+    /** Auto-hide: fades out after a minute of nothing, back the moment he's needed. */
+    private final Runnable watch = new Runnable() {
+        @Override
+        public void run() {
+            if (web != null) {
+                boolean idle = System.currentTimeMillis() - BuddyWeb.lastAwake > HIDE_AFTER_MS;
+                boolean hide = idle && BuddyWeb.autoHide(OverlayService.this);
+                if (hide != hidden) fade(hide);
+            }
+            handler.postDelayed(this, 500);
+        }
+    };
+
+    private void fade(boolean hide) {
+        hidden = hide;
+        ValueAnimator a = ValueAnimator.ofFloat(params.alpha, hide ? 0f : 1f);
+        a.setDuration(hide ? 1200 : 250);
+        a.addUpdateListener(v -> {
+            if (web == null) return;
+            params.alpha = (float) v.getAnimatedValue();
+            windows.updateViewLayout(web, params);
+        });
+        a.start();
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -35,13 +67,24 @@ public class OverlayService extends Service {
         } else {
             startForeground(1, n);
         }
-        if (intent != null && Talk.ACTION.equals(intent.getAction())) {
-            if (web != null) web.evaluateJavascript("window.toggleTalk && toggleTalk()", null);
+        boolean talk = intent != null && (Talk.ACTION.equals(intent.getAction()) || intent.getBooleanExtra("talk", false));
+        if (talk) BuddyWeb.lastAwake = System.currentTimeMillis();  // (show him straight away)
+        if (web != null) {
+            if (talk) web.evaluateJavascript("window.toggleTalk && toggleTalk()", null);
             return START_STICKY;
         }
-        if (web == null && Settings.canDrawOverlays(this)) show(intent);
-        if (web == null) stopSelf();
-        running = web != null;
+        if (Settings.canDrawOverlays(this)) show(intent);
+        if (web == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        running = true;
+        handler.post(watch);
+        if (talk) {  // started by the mic button: listen once his page has loaded
+            handler.postDelayed(() -> {
+                if (web != null) web.evaluateJavascript("window.toggleTalk && toggleTalk()", null);
+            }, 3000);
+        }
         return START_STICKY;
     }
 
@@ -63,12 +106,16 @@ public class OverlayService extends Service {
         p.x = Math.round(dm.widthPixels * 0.025f);
         p.y = Math.round(dm.heightPixels * 0.04f);
         web = BuddyWeb.make(this, url + "/?tv&corner", null);
+        params = p;
+        hidden = false;
+        BuddyWeb.lastAwake = System.currentTimeMillis();
         windows.addView(web, p);
     }
 
     @Override
     public void onDestroy() {
         running = false;
+        handler.removeCallbacksAndMessages(null);
         if (web != null) {
             windows.removeView(web);
             web.destroy();

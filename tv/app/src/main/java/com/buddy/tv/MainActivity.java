@@ -120,6 +120,12 @@ public class MainActivity extends Activity implements BuddyWeb.MicAsker {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_MENU && web != null) {  // the remote's menu button
+            boolean on = BuddyWeb.toggleAutoHide(this);
+            web.evaluateJavascript("status('Auto-hide in the corner: " + (on ? "on (after a minute of quiet)" : "off")
+                    + "')", null);
+            return true;
+        }
         if (keyCode == KeyEvent.KEYCODE_BACK && web != null) {
             event.startTracking();
             return true;

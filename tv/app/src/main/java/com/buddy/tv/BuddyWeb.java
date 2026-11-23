@@ -23,6 +23,9 @@ import android.webkit.WebViewClient;
 final class BuddyWeb {
     static final String PREFS = "buddy";
     static final String KEY_URL = "url";
+    static final String KEY_AUTOHIDE = "autohide";
+    /** When the page last had something going on (listening, thinking, talking). */
+    static volatile long lastAwake = System.currentTimeMillis();
 
     /** Asks for the microphone (only the full-screen app can show that question). */
     interface MicAsker {
@@ -33,6 +36,16 @@ final class BuddyWeb {
 
     static String savedUrl(Context c) {
         return prefs(c).getString(KEY_URL, "");
+    }
+
+    static boolean autoHide(Context c) {
+        return prefs(c).getBoolean(KEY_AUTOHIDE, true);
+    }
+
+    static boolean toggleAutoHide(Context c) {
+        boolean on = !autoHide(c);
+        prefs(c).edit().putBoolean(KEY_AUTOHIDE, on).apply();
+        return on;
     }
 
     static void saveUrl(Context c, String url) {
@@ -82,6 +95,11 @@ final class BuddyWeb {
                     return "not allowed (run install-tv-app.bat again)";
                 }
                 return recorder.start();
+            }
+
+            @JavascriptInterface
+            public void awake() {  // (the page, while he's doing something)
+                lastAwake = System.currentTimeMillis();
             }
 
             @JavascriptInterface

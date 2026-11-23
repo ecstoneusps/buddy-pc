@@ -76,9 +76,13 @@ The desk Buddy lives in
   3. On the PC: download **BuddyTV.apk** from this repo's Releases page
      ("Buddy TV app") into the Buddy folder and run **install-tv-app.bat**.
      It asks for the TV's IP address and Buddy's address.
-  On the remote: **OK** talks to him on the TV (if the TV's microphone can
-  be used), **Back** puts him in the corner, **hold Back** closes him. Open
-  the Buddy app again to bring him back full screen.
+  On the remote: the **microphone button** (after use-mic-button-for-buddy.bat;
+  give-mic-button-back-to-google.bat undoes it) or **OK** talks to him,
+  **Back** puts him in the corner, **hold Back** closes him, **Menu** turns
+  auto-hide on or off (in the corner he fades away after a minute of quiet
+  and comes back when you press the microphone button or he answers). If
+  he isn't open, the microphone button opens him in the corner, listening.
+  Open the Buddy app to bring him back full screen.
 - While he talks, **other apps are turned down** (videos, games, music: to
   `duck_others` = 40 % of their volume) and back up when he's done.
   `volume` (up to 300 %) makes him louder without distorting.
