@@ -11,3 +11,5 @@ buddy.log
 buddy.log.old
 buddy-yesterday.log
 jokes.json
+platform-tools/
+BuddyTV.apk
