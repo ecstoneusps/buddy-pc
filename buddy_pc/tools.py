@@ -29,6 +29,16 @@ def definitions(cfg):
             "description": "The weather where your owner lives: now, and the forecast for today and the next two "
                            "days. Use it for any question about weather, temperature, rain, snow or wind.",
             "parameters": {"type": "object", "properties": {}}}})
+    if cfg.get("ha_url") and cfg.get("ha_token"):
+        tools.append({"type": "function", "function": {
+            "name": "control_home",
+            "description": "Control or check your owner's home devices through Home Assistant: lights, lamps, "
+                           "switches, fans, the thermostat, locks, the garage door, blinds. Turn things on or off, "
+                           "dim, set a temperature, or ask whether something is on, open or locked.",
+            "parameters": {"type": "object", "properties": {
+                "command": {"type": "string", "description": "The command in plain words, naming the device and "
+                                                             "room, like 'turn off the kitchen lights'"}},
+                "required": ["command"]}}})
     if cfg.get("vision_model"):
         tools.append({"type": "function", "function": {
             "name": "look",
@@ -50,6 +60,11 @@ def run(cfg, name, args, log):
             return weather(cfg)
         if name == "look":
             return look(cfg, str(args.get("question", "What do you see?")), log)
+        if name == "control_home":
+            from . import home
+            done, said = home.command(cfg, str(args.get("command", "")), log)
+            return (f"Home Assistant {'did it' if done else 'could not do it'} and said: {said or '(nothing)'}. "
+                    "Tell your owner briefly, in your own words.")
     except Exception as e:  # noqa: BLE001 (tell the AI it didn't work, rather than crash)
         log(f"{name} didn't work: {e}")
         return f"That didn't work ({type(e).__name__}). Tell your owner you couldn't check just now."

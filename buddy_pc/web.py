@@ -118,6 +118,8 @@ class Web:
         kind, fact = memory.parse_command(heard) if jpg is None else (None, None)
         if kind:
             text = b._memory(kind, fact)
+        elif jpg is None and (done := b._home(heard)):
+            text = done
         elif is_cancel(heard):
             return "neutral", ""
         else:

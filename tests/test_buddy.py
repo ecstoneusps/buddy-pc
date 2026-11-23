@@ -970,6 +970,49 @@ def test_question_asked_while_he_worked_out_hey_buddy_is_kept():
     assert drained == [] and b.speaker.said == ["Here's one."]
 
 
+def test_home_assistant_devices():
+    from buddy_pc import home, tools
+    for said in ("turn off the kitchen lights", "Hey Buddy, switch the fan on", "dim the living room lights",
+                 "set the thermostat to 70 degrees", "lock the front door", "is the garage door open?",
+                 "turn the bedroom lamp off please"):
+        assert home.sounds_like_command(said), said
+    for said in ("tell me a joke", "what's the weather", "turn around", "what time is it"):
+        assert not home.sounds_like_command(said), said
+    got = []
+
+    class HA(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            got.append((self.path, self.headers["Authorization"], body["text"]))
+            ok = "kitchen" in body["text"]
+            out = {"response": {"response_type": "action_done" if ok else "error",
+                                "speech": {"plain": {"speech": "Turned off the lights" if ok
+                                                     else "Sorry, I am not aware of any device called garage"}}}}
+            data = json.dumps(out).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+    srv = HTTPServer(("127.0.0.1", 0), HA)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    cfg = {"ha_url": f"http://127.0.0.1:{srv.server_address[1]}", "ha_token": "t0ken"}
+    assert home.command(cfg, "turn off the kitchen lights", lambda *a, **k: None) == (True, "Turned off the lights")
+    assert got[0] == ("/api/conversation/process", "Bearer t0ken", "turn off the kitchen lights")
+    assert any(t["function"]["name"] == "control_home" for t in tools.definitions(cfg))
+    # Said to him: done by Home Assistant, no AI needed; one it can't do goes to the AI.
+    b = _fake_buddy([["[confused] I couldn't find a garage door."]], ["turn off the kitchen lights", "open the garage door"])
+    b.cfg.update(cfg, follow_up=False)
+    b.brain.history = []
+    b._conversation()
+    assert b.speaker.said == ["Turned off the lights"]
+    b._conversation()
+    assert b.speaker.said[-1] == "I couldn't find a garage door."
+    srv.shutdown()
+
+
 def test_phone_app():
     import urllib.request
     from unittest import mock

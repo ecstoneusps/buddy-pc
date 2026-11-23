@@ -42,6 +42,10 @@ The desk Buddy lives in
 - He knows **which window is in front and what's playing**, and **looks at the
   screen** when you ask ("what's this error?", "what's on my screen?"); the
   screenshot only goes to Ollama on this PC.
+- He controls your **home's devices through Home Assistant** ("turn off the
+  kitchen lights", "is the garage door open?"), at the desk, on the phone and
+  on the TV: set `ha_url` and `ha_token` (a long-lived access token from
+  your Home Assistant profile, Security) in buddy.ini. The token stays there.
 - With **voice ID** (`voice_id_url`, the desk Buddy's service), he knows
   whether it's you or a guest talking (the console shows `voice: owner (score ...)`).
   Say **"learn my voice"** to add three samples through the PC's microphone to

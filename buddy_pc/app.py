@@ -517,8 +517,11 @@ class Buddy:
                 self._learn_voice(who[0])
                 return
             kind, fact = memory.parse_command(heard)
+            done_at_home = None if kind else self._home(heard)
             if kind:
                 spoken, cancelled = self._answer(heard, iter([self._memory(kind, fact)]))
+            elif done_at_home:
+                spoken, cancelled = self._answer(heard, iter([done_at_home]))
             else:
                 extra = voiceid.LINES.get(who[0], "")
                 looked = False
@@ -621,6 +624,25 @@ class Buddy:
             self._say("[laughing] All done! Now I know your voice through this microphone too.")
         finally:
             ep.start_window, ep.end_silence = saved
+
+    def _home(self, heard):
+        """A device command ("turn off the kitchen lights") done straight by Home
+        Assistant: what to say, or None (not one, or Home Assistant couldn't:
+        then his AI answers, and can try with its control_home tool)."""
+        from . import home
+        if not home.ready(self.cfg) or not home.sounds_like_command(heard):
+            return None
+        try:
+            done, said = home.command(self.cfg, heard, log)
+        except Exception as e:  # noqa: BLE001 (Home Assistant not reachable: the AI explains)
+            log(f"Home Assistant didn't answer: {type(e).__name__}: {e}")
+            return None
+        if not done:
+            return None
+        reply = f"[happy] {said or 'Done!'}"
+        now = time.time()
+        self.brain.history += [(now, "user", heard), (now, "assistant", said or "Done!")]
+        return reply
 
     def _memory(self, kind, fact):
         """'Remember that...' / 'forget...': changes the shared notes. Returns what to say."""
