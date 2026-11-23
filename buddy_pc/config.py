@@ -75,6 +75,8 @@ def load(path=CONFIG_FILE):
         "camera_index": int(g("camera_index", "0")),
         # Only answer when the webcam sees you at the desk, facing him
         "need_to_see_you": _on(g("need_to_see_you", "on")),
+        # Buddy on your phone (through Tailscale): the port on this PC, 0 = off
+        "web_port": int(g("web_port", "8770") or 0),
         # Things he should never bring up, not even in a joke (coffee, when you don't drink it)
         "never_mention": [w.strip() for w in g("never_mention", "").split(",") if w.strip()],
         # Voice ID (tools/voiceid in the desk Buddy's project): who's talking

@@ -139,6 +139,12 @@ class Buddy:
         self.brain.context = self._pc_context
         self.brain.shared.on_say = lambda text: self.remarks.put((time.time(), text))
         self.ears = Transcriber(cfg, log)
+        if cfg.get("web_port"):
+            try:
+                from .web import Web
+                self.web = Web(self, cfg, log)
+            except OSError as e:
+                log(f"(Buddy's phone app couldn't start on port {cfg['web_port']}: {e})")
         self.mic = self._open_mic(cfg["mic"])
         log(f"microphone: {self.mic.name}" + ("" if cfg["mic"] else
             " (Windows' default: set microphone = in buddy.ini to stick to one)"))

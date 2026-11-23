@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Buddy">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Buddy</title>
+<style>
+  :root { --accent: #28dcff; --dim: #8a94a6; --bg: #000; --panel: #11141b; --text: #e8edf5; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  body { display: flex; flex-direction: column; padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); }
+  #face { width: 100%; flex: 1 1 auto; min-height: 0; display: block; }
+  #status { text-align: center; color: var(--dim); min-height: 1.4em; font-size: 15px; }
+  #words { min-height: 4.4em; max-height: 30vh; overflow-y: auto; margin: 8px 0; font-size: 15px; }
+  #words .you { color: var(--dim); }
+  #words .him { color: var(--text); }
+  #controls { display: flex; align-items: center; gap: 12px; padding: 8px 0 16px; }
+  #talk { flex: 0 0 auto; width: 84px; height: 84px; border-radius: 50%; border: 3px solid var(--accent);
+    background: var(--panel); color: var(--accent); font-size: 15px; font-weight: 600; touch-action: manipulation; }
+  #talk.on { background: var(--accent); color: #000; }
+  #talk:disabled { opacity: .45; }
+  form { flex: 1 1 auto; display: flex; gap: 8px; min-width: 0; }
+  #typed { flex: 1 1 auto; min-width: 0; padding: 12px 14px; border-radius: 22px; border: 1px solid #2a3140;
+    background: var(--panel); color: var(--text); font-size: 16px; }
+  #send { padding: 0 16px; border-radius: 22px; border: 0; background: var(--panel); color: var(--accent);
+    font-size: 16px; font-weight: 600; }
+  body.tv #controls, body.tv #words { display: none; }
+</style>
+</head>
+<body>
+<canvas id="face"></canvas>
+<div id="status">Tap Talk, say something, tap again to send.</div>
+<div id="words"></div>
+<div id="controls">
+  <button id="talk" aria-label="Talk">Talk</button>
+  <form id="typeform" autocomplete="off">
+    <input id="typed" placeholder="Or type to Buddy" enterkeyhint="send">
+    <button id="send" type="submit">Send</button>
+  </form>
+</div>
+<script>
+"use strict";
+const TABLES = /*FACE*/null;
+
+// ---- His face: the same engine as on the PC and the desk Buddy -------------
+const NAMES = Object.keys(TABLES.base);
+const params = e => Object.assign({}, TABLES.base, TABLES.tweaks[e] || {});
+const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+const approach = (c, t, dt, tau) => c + (t - c) * (1 - Math.exp(-dt / tau));
+const BLINK = 150, BREATH = 3800;
+
+const face = {
+  expr: "neutral", cur: params("neutral"), target: params("neutral"),
+  blinkTimer: 2000, blinkPhase: -1, doubleBlink: false,
+  lx: 0, ly: 0, ltx: 0, lty: 0, gazeTimer: 1500, talk: 0, talkTarget: 0, t: 0,
+  set(e) { if (!TABLES.tweaks[e] && e !== "neutral") e = "neutral";
+           if (e !== this.expr) { this.expr = e; this.target = params(e); } },
+  update(dt) {
+    this.t += dt;
+    for (const n of NAMES) this.cur[n] = approach(this.cur[n], this.target[n], dt, 90);
+    this.talk = approach(this.talk, this.talkTarget, dt, 35);
+    if (this.blinkPhase >= 0) {
+      this.blinkPhase += dt;
+      if (this.blinkPhase >= BLINK) {
+        this.blinkPhase = -1;
+        if (this.doubleBlink) { this.doubleBlink = false; this.blinkTimer = 90; }
+        else { this.blinkTimer = 1800 + Math.random() * 3700; this.doubleBlink = Math.random() < 0.18; }
+      }
+    } else if ((this.blinkTimer -= dt) <= 0) this.blinkPhase = 0;
+    if ((this.gazeTimer -= dt) <= 0) {
+      const r = this.expr === "listening" ? 0.25 : 0.9;
+      if (Math.random() < 0.45) { this.ltx = (Math.random() - .5) * .3; this.lty = (Math.random() - .5) * .2; }
+      else { this.ltx = (Math.random() * 2 - 1) * r; this.lty = (Math.random() * 2 - 1) * r * .6; }
+      this.gazeTimer = 700 + Math.random() * 2800;
+      if (Math.random() < 0.25 && this.blinkPhase < 0) this.blinkPhase = 0;
+    }
+    this.lx = approach(this.lx, this.ltx, dt, 55);
+    this.ly = approach(this.ly, this.lty, dt, 55);
+  },
+  draw(ctx, W, H) {
+    const p = this.cur, s = Math.min(W / 320, H / 240), t = this.t;
+    const eye = `rgb(${p.eyeR|0},${p.eyeG|0},${p.eyeB|0})`;
+    const sh = c => (c + (255 - c) * 0.7) | 0;
+    const shine = `rgb(${sh(p.eyeR)},${sh(p.eyeG)},${sh(p.eyeB)})`;
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+    const ell = (x, y, rx, ry, col) => { ctx.fillStyle = col; ctx.beginPath();
+      ctx.ellipse(x, y, Math.max(rx, .1), Math.max(ry, .1), 0, 0, Math.PI * 2); ctx.fill(); };
+    const poly = (pts, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(...pts[0]);
+      for (const q of pts.slice(1)) ctx.lineTo(...q); ctx.closePath(); ctx.fill(); };
+    let blink = 1;
+    if (this.blinkPhase >= 0) blink = Math.abs(this.blinkPhase - BLINK / 2) / (BLINK / 2);
+    const openBoth = clamp(p.openness * blink, 0, 1);
+    const breath = Math.sin(t * 2 * Math.PI / BREATH) * 2.5 * s
+      + Math.abs(Math.sin(t * 2 * Math.PI / 360)) * -5 * s * clamp(p.bounce, 0, 1);
+    const gx = clamp(this.lx + p.lookX, -1, 1) * 24 * s, gy = clamp(this.ly + p.lookY, -1, 1) * 16 * s;
+    const cx = W / 2, eyeY = H * 0.42 + breath + gy, dx = 74 * s;
+    for (const side of [-1, 1]) {
+      let sc = (side < 0 ? p.eyeScaleL : p.eyeScaleR) * (1 + this.lx * 0.08 * side);
+      if (this.expr === "listening") sc *= 1 + 0.07 * Math.sin(t * 2 * Math.PI / 900);
+      const op = clamp(openBoth * (side < 0 ? p.opennessL : p.opennessR), 0, 1);
+      const w = p.eyeW * s * sc, hFull = p.eyeH * s * sc, h = Math.max(hFull * op, 5 * s);
+      const x = cx + side * dx + gx, top = eyeY - h / 2, left = x - w / 2;
+      ctx.fillStyle = eye; ctx.beginPath(); ctx.roundRect(left, top, w, h, Math.min(w, h) * 0.3); ctx.fill();
+      if (op > 0.55 && p.lidBottom < 0.45 && p.lidTop < 0.2) {
+        const hr = w * 0.1;
+        ell(x - w * 0.2, top + h * 0.24, hr, hr, shine);
+        ell(x - w * 0.02, top + h * 0.38, hr * .45, hr * .45, shine);
+      }
+      const inner = x - side * (w / 2 + 3 * s), outer = x + side * (w / 2 + 3 * s);
+      if (p.lidAngry > .01) poly([[outer, top - 3 * s], [inner, top - 3 * s], [inner, top + p.lidAngry * h * .6]], "#000");
+      if (p.lidSad > .01) poly([[inner, top - 3 * s], [outer, top - 3 * s], [outer, top + p.lidSad * h * .6]], "#000");
+      if (p.lidTop > .01) { ctx.fillStyle = "#000"; ctx.fillRect(left - 3 * s, top - 3 * s, w + 6 * s, p.lidTop * h * .55 + 3 * s); }
+      if (p.lidBottom > .01) { const ry = h * .6; ell(x, top + h + ry - p.lidBottom * h * 1.05, w * .6, ry, "#000"); }
+      if (p.tears > .05) {
+        const tt = clamp(p.tears, 0, 1), tc = `rgb(${90 * tt | 0},${170 * tt | 0},${255 * tt | 0})`;
+        for (let k = 0; k < 2; k++) {
+          const ph = (t / 1100 + k * .5 + (side > 0 ? .25 : 0)) % 1;
+          const tx = x + side * w * .32, ty = top + h + 4 * s + ph * 46 * s, rr = 4.5 * s;
+          ell(tx, ty, rr, rr, tc); poly([[tx - rr, ty], [tx + rr, ty], [tx, ty - 2.4 * rr]], tc);
+        }
+      }
+      if (p.blush > .02) { const b = clamp(p.blush, 0, 1) * .6;
+        ell(x + side * w * .45, eyeY + hFull * .58, w * .3, 9 * s, `rgb(${255 * b | 0},${70 * b | 0},${120 * b | 0})`); }
+    }
+    const mx = cx + gx * .5 + p.mouthSkew * p.mouthW * .18 * s, my = H * .78 + breath * .6 + gy * .35;
+    const mw = p.mouthW * s, k = p.mouthCurve * 13 * s, thick = 3.6 * s;
+    const mOpen = clamp(p.mouthOpen + this.talk * .8, 0, 1);
+    if (mOpen <= .04) {
+      ctx.strokeStyle = eye; ctx.lineWidth = thick * 2; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.beginPath();
+      for (let i = 0; i <= 28; i++) { const u = i / 28 * 2 - 1;
+        const px = mx + u * mw / 2, py = my - k * .5 + k * (1 - u * u) - p.mouthSkew * u * 7 * s;
+        i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+      ctx.stroke();
+    } else if (k > 3 * s) {
+      const rx = mw * .5, ry = 4 * s + mOpen * 26 * s, y0 = my - k * .4;
+      ell(mx, y0, rx, ry, eye); ctx.fillStyle = "#000"; ctx.fillRect(mx - rx - 2 * s, y0 - ry - 2 * s, 2 * rx + 4 * s, ry + 2 * s);
+    } else {
+      ell(mx, my, Math.max(mw * .42, 9 * s) * (.75 + .25 * mOpen), 3 * s + mOpen * 18 * s, eye);
+    }
+    if (p.tongue > .05) { const tt = clamp(p.tongue, 0, 1), tx = mx + mw * .12;
+      const ty = (mOpen > .04 && k > 3 * s) ? my - k * .4 + (4 + mOpen * 26) * s * .9 : my + k * .5 + 6 * s;
+      ell(tx, ty, mw * .17 * tt, 11 * s * tt, `rgb(${255 * tt | 0},${95 * tt | 0},${140 * tt | 0})`); }
+  },
+};
+
+const canvas = document.getElementById("face"), ctx = canvas.getContext("2d");
+let last = performance.now();
+function frame(now) {
+  const dpr = window.devicePixelRatio || 1, r = canvas.getBoundingClientRect();
+  const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  face.talkTarget = mouthLevel();
+  face.update(Math.min(100, now - last)); last = now;
+  // His face fills the middle at 4:3, whatever the screen's shape.
+  const fw = Math.min(W, H * 4 / 3), fh = fw * 3 / 4;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate((W - fw) / 2, (H - fh) / 2); face.draw(ctx, fw, fh); ctx.restore();
+  document.documentElement.style.setProperty("--accent", `rgb(${face.cur.eyeR|0},${face.cur.eyeG|0},${face.cur.eyeB|0})`);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- Talking ---------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const status = t => { $("status").textContent = t; };
+let audioCtx = null, analyser = null, levelBuf = null, playing = null, lingerTimer = null;
+
+function unlockAudio() {  // (iPhones only play sound started from a tap)
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 512;
+    levelBuf = new Float32Array(analyser.fftSize);
+    analyser.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+function mouthLevel() {
+  if (!playing || !analyser) return 0;
+  analyser.getFloatTimeDomainData(levelBuf);
+  let sum = 0; for (const v of levelBuf) sum += v * v;
+  return clamp(Math.sqrt(sum / levelBuf.length) * 5, 0, 1);
+}
+function addWords(cls, text) {
+  if (!text) return;
+  const d = document.createElement("div"); d.className = cls; d.textContent = text;
+  $("words").appendChild(d); $("words").scrollTop = 1e6;
+  while ($("words").children.length > 12) $("words").firstChild.remove();
+}
+function stopTalking() { if (playing) { try { playing.stop(); } catch (e) {} playing = null; } }
+
+async function show(reply) {
+  if (reply.error) { face.set("confused"); status(reply.error); setTimeout(() => face.set("neutral"), 2500); return; }
+  addWords("you", reply.heard ? "You: " + reply.heard : "");
+  if (!reply.heard) { face.set("confused"); status("I didn't catch that. Try again?");
+    setTimeout(() => face.set("neutral"), 2000); return; }
+  addWords("him", reply.text);
+  face.set(reply.emotion || "happy"); status("");
+  clearTimeout(lingerTimer);
+  if (reply.audio && audioCtx) {
+    const bytes = Uint8Array.from(atob(reply.audio), c => c.charCodeAt(0));
+    const buf = await audioCtx.decodeAudioData(bytes.buffer);
+    stopTalking();
+    const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(analyser);
+    playing = src;
+    src.onended = () => { if (playing === src) playing = null; lingerTimer = setTimeout(() => face.set("neutral"), 1500); };
+    src.start();
+  } else lingerTimer = setTimeout(() => face.set("neutral"), 3000);
+}
+
+async function send(url, body, type) {
+  $("talk").disabled = true; face.set("thinking"); status("Thinking...");
+  try {
+    const r = await fetch(url, { method: "POST", body, headers: { "Content-Type": type } });
+    await show(await r.json());
+  } catch (e) {
+    face.set("sad"); status("Can't reach Buddy. Is the PC on, and Tailscale connected?");
+    setTimeout(() => face.set("neutral"), 3000);
+  } finally { $("talk").disabled = false; }
+}
+
+let rec = null, chunks = [], stream = null, autoStop = null;
+async function startRecording() {
+  unlockAudio(); stopTalking();
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { status("Buddy needs the microphone: allow it for this site in Settings."); return; }
+  chunks = [];
+  rec = new MediaRecorder(stream);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    const blob = new Blob(chunks, { type: rec.mimeType || "audio/mp4" });
+    rec = null;
+    if (blob.size < 1000) { face.set("neutral"); status("That was too short. Tap Talk and speak."); return; }
+    send("/api/talk", blob, blob.type || "application/octet-stream");
+  };
+  rec.start();
+  face.set("listening"); status("Listening... tap again when you're done.");
+  $("talk").classList.add("on"); $("talk").textContent = "Done";
+  autoStop = setTimeout(stopRecording, 20000);
+}
+function stopRecording() {
+  clearTimeout(autoStop);
+  $("talk").classList.remove("on"); $("talk").textContent = "Talk";
+  if (rec && rec.state !== "inactive") rec.stop();
+}
+$("talk").addEventListener("click", () => rec ? stopRecording() : startRecording());
+$("typeform").addEventListener("submit", e => {
+  e.preventDefault(); unlockAudio(); stopTalking();
+  const text = $("typed").value.trim(); if (!text) return;
+  $("typed").value = ""; $("typed").blur();
+  send("/api/say", JSON.stringify({ text }), "application/json");
+});
+canvas.addEventListener("click", () => { if (playing) { stopTalking(); face.set("neutral"); } });  // tap his face: hush
+if (new URLSearchParams(location.search).has("tv")) document.body.classList.add("tv");
+</script>
+</body>
+</html>

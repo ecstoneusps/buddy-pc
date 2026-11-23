@@ -50,6 +50,17 @@ The desk Buddy lives in
   (`need_to_see_you`): not when you're away or turned around talking to
   someone. A quick look per "Hey Buddy" (the camera light blinks); nothing
   is saved. If the camera is busy or the room is dark, he answers anyway.
+- **Buddy on your phone**: a web app with his face, a Talk button and a
+  type box (same Buddy, same notes). It's served on this PC only
+  (`web_port`, 8770); Tailscale brings it to your phone anywhere:
+  1. On the PC, once, in a Command Prompt: `tailscale serve --bg 8770`
+     (if it asks, turn on HTTPS for your tailnet at the link it gives).
+     It prints the address, like `https://my-pc.tail1234.ts.net`.
+  2. On the iPhone (Tailscale connected), open that address in Safari,
+     tap Share, then **Add to Home Screen**. Allow the microphone when asked.
+  3. Tap **Talk**, speak, tap **Done**. Or type. Tap his face to hush him.
+  To see him on the TV, AirPlay the phone to the Apple TV (Control Center,
+  Screen Mirroring): his face and voice go to the TV, you talk into the phone.
 - While he talks, **other apps are turned down** (videos, games, music: to
   `duck_others` = 40 % of their volume) and back up when he's done.
   `volume` (up to 300 %) makes him louder without distorting.

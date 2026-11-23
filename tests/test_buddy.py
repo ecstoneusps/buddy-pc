@@ -970,6 +970,32 @@ def test_question_asked_while_he_worked_out_hey_buddy_is_kept():
     assert drained == [] and b.speaker.said == ["Here's one."]
 
 
+def test_phone_app():
+    import urllib.request
+    from unittest import mock
+    from buddy_pc import voice, web
+    b = _fake_buddy([["[laughing] Here's a joke."], ["[happy] Hi there!"]], [])
+    b.ears = type("W", (), {"text": lambda self, pcm, hotwords=None, strict=False: "tell me a joke"})()
+    cfg = {"web_port": 0, "kokoro_host": "x", "kokoro_port": 1, "voice": "v"}
+    w = web.Web(b, cfg, lambda *a, **k: None)
+    url = f"http://127.0.0.1:{w.server.server_address[1]}"
+    page = urllib.request.urlopen(url + "/").read().decode()
+    assert '"tweaks"' in page and "/*FACE*/null" not in page
+    assert urllib.request.urlopen(url + "/icon.png").read()[:4] == b"\x89PNG"
+    rec = web.wav_bytes(16000, (np.sin(np.arange(16000) / 5) * 8000).astype(np.int16))
+
+    def post(path, body, ctype):
+        req = urllib.request.Request(url + path, data=body, headers={"Content-Type": ctype})
+        return json.loads(urllib.request.urlopen(req).read())
+    with mock.patch.object(voice, "synthesize", lambda *a: (24000, np.zeros(2400, np.int16))):
+        r = post("/api/talk", rec, "audio/wav")
+        assert r["heard"] == "tell me a joke" and r["text"] == "Here's a joke." and r["emotion"] == "laughing"
+        assert r["audio"]
+        r = post("/api/say", json.dumps({"text": "hello"}).encode(), "application/json")
+        assert r["text"] == "Hi there!" and r["emotion"] == "happy"
+    w.server.shutdown()
+
+
 def test_facing_him_or_not():
     from unittest import mock
     from buddy_pc import presence as P
