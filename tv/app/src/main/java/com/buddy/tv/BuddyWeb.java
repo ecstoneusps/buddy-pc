@@ -6,6 +6,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
+import android.webkit.JavascriptInterface;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.PermissionRequest;
@@ -57,6 +60,26 @@ final class BuddyWeb {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);  // he talks without a tap
+        // For the page: which microphones the TV lets apps use (to say why talking
+        // on the TV doesn't work, when it doesn't).
+        web.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public String mics() {
+                StringBuilder out = new StringBuilder();
+                AudioManager am = c.getSystemService(AudioManager.class);
+                for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                    if (out.length() > 0) out.append(", ");
+                    out.append(d.getProductName()).append(" (type ").append(d.getType()).append(")");
+                }
+                return out.toString();
+            }
+
+            @JavascriptInterface
+            public String micAllowed() {
+                return c.checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                        == PackageManager.PERMISSION_GRANTED ? "yes" : "no";
+            }
+        }, "BuddyTV");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {

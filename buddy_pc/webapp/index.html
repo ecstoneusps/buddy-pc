@@ -364,7 +364,16 @@ async function startRecording() {
   unlockAudio(); stopTalking();
   audioMode("play-and-record");
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
-  catch (e) { status("Buddy needs the microphone: allow it for this site in Settings."); return; }
+  catch (e) {
+    let why = "Buddy needs the microphone: allow it for this site in Settings.";
+    if (TV) {  // what the TV app can tell us about its microphones
+      const mics = window.BuddyTV && BuddyTV.mics ? BuddyTV.mics() : "?";
+      const allowed = window.BuddyTV && BuddyTV.micAllowed ? BuddyTV.micAllowed() : "?";
+      why = `No microphone here (${e.name}). Microphones the TV offers apps: ${mics || "none"}; allowed: ${allowed}.`;
+    } else if (e.name === "NotFoundError") why = "No microphone found on this device.";
+    status(why); face.set("confused"); tellTV("idle"); setTimeout(() => face.set("neutral"), 2500);
+    return;
+  }
   chunks = [];
   rec = new MediaRecorder(stream);
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
