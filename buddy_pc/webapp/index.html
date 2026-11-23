@@ -340,6 +340,7 @@ async function tvLoop() {  // (the TV) show and say what the phone asked for
     } catch (e) { status("Can't reach Buddy..."); await new Promise(ok => setTimeout(ok, 5000)); }
   }
 }
+window.toggleTalk = () => { rec ? stopRecording() : startRecording(); };  // (the TV app's talk button)
 window.setPip = on => document.body.classList.toggle("pip", !!on);  // (the TV app: in the corner window)
 
 async function send(url, body, type) {
@@ -368,8 +369,21 @@ async function startRecording() {
     const r = BuddyTV.startRec();
     if (r !== "ok") { status("The TV's microphone: " + r); face.set("confused"); setTimeout(() => face.set("neutral"), 2500); return; }
     rec = { native: true, state: "recording" };
-    face.set("listening"); status("Listening... press OK when you're done.");
+    face.set("listening"); status("Listening...");
     autoStop = setTimeout(stopRecording, 20000);
+    // Done when you stop talking: loud enough over the room's own sound, then
+    // a second and a half of quiet. (The button again stops it too.)
+    const t0 = Date.now(); let floor = null, spoke = 0, quietSince = 0;
+    const me = rec;
+    const watch = setInterval(() => {
+      if (rec !== me) { clearInterval(watch); return; }
+      const db = BuddyTV.recLevel(), now = Date.now();
+      if (now - t0 < 400) { floor = floor === null ? db : Math.min(floor, db); return; }
+      if (db > Math.max(floor + 12, -50)) { spoke = spoke || now; quietSince = 0; }
+      else if (spoke && !quietSince) quietSince = now;
+      if (spoke && quietSince && now - quietSince > 1500) { clearInterval(watch); stopRecording(); }
+      if (!spoke && now - t0 > 7000) { clearInterval(watch); stopRecording(); }  // nothing said
+    }, 100);
     return;
   }
   audioMode("play-and-record");
@@ -409,7 +423,7 @@ function stopRecording() {
   if (rec && rec.native) {
     rec = null;
     const audio = BuddyTV.stopRec();
-    if (!audio || audio.length < 20000) { face.set("neutral"); status("That was too short. Press OK and speak."); return; }
+    if (!audio || audio.length < 20000) { face.set("neutral"); status("I didn't hear anything."); return; }
     send("/api/talk", JSON.stringify({ audio, type: "audio/wav" }), "application/json");
     return;
   }
@@ -427,7 +441,7 @@ if (TV) {
   document.body.classList.add("tv");
   const q = new URLSearchParams(location.search);
   if (q.has("corner")) setPip(true);
-  const hint = q.has("app") ? "OK: talk to him here  ·  Back: Buddy in the corner  ·  Hold Back: close Buddy"
+  const hint = q.has("app") ? "OK or your Talk to Buddy button: talk  ·  Back: Buddy in the corner  ·  Hold Back: close"
                             : "Talk to Buddy on your phone, or press OK on the remote to talk here.";
   status(hint);
   tvLoop();

@@ -32,6 +32,27 @@
             </intent-filter>
         </activity>
 
+        <!-- "Talk to Buddy": for a remote button (tvQuickActions can launch it). -->
+        <activity
+            android:name=".Talk$Shortcut"
+            android:label="Talk to Buddy"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=".talk"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".Talk$Receiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.buddy.tv.TALK" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".OverlayService"
             android:exported="false"

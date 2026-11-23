@@ -29,6 +29,7 @@ import android.widget.TextView;
  */
 public class MainActivity extends Activity implements BuddyWeb.MicAsker {
     private static final int MIC_REQUEST = 1;
+    static MainActivity current;  // (for "Talk to Buddy" while he's full screen)
     private WebView web;
     private PermissionRequest pendingMic;
     private boolean closing;
@@ -40,6 +41,19 @@ public class MainActivity extends Activity implements BuddyWeb.MicAsker {
         stopService(new Intent(this, OverlayService.class));  // back from the corner: full screen
         takeUrl(getIntent());
         start();
+        current = this;
+        talkSoonIfAsked(getIntent());
+    }
+
+    /** Opened by "Talk to Buddy": listen once the page has loaded. */
+    private void talkSoonIfAsked(Intent intent) {
+        if (intent != null && intent.getBooleanExtra("talk", false) && web != null) {
+            web.postDelayed(this::toggleTalk, 2500);
+        }
+    }
+
+    void toggleTalk() {
+        if (web != null) web.evaluateJavascript("window.toggleTalk && toggleTalk()", null);
     }
 
     @Override
@@ -47,6 +61,7 @@ public class MainActivity extends Activity implements BuddyWeb.MicAsker {
         super.onNewIntent(intent);
         stopService(new Intent(this, OverlayService.class));
         if (takeUrl(intent)) start();
+        talkSoonIfAsked(intent);
     }
 
     /** "adb shell am start -n com.buddy.tv/.MainActivity --es url https://..." sets the address. */
@@ -189,6 +204,7 @@ public class MainActivity extends Activity implements BuddyWeb.MicAsker {
 
     @Override
     protected void onDestroy() {
+        if (current == this) current = null;
         if (web != null) web.destroy();
         web = null;
         super.onDestroy();

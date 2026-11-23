@@ -18,6 +18,7 @@ import android.webkit.WebView;
 /** Buddy in a small window floating in the corner, over whatever is on the TV. */
 public class OverlayService extends Service {
     private static final String CHANNEL = "buddy";
+    static volatile boolean running;
     private WindowManager windows;
     private WebView web;
 
@@ -34,8 +35,13 @@ public class OverlayService extends Service {
         } else {
             startForeground(1, n);
         }
+        if (intent != null && Talk.ACTION.equals(intent.getAction())) {
+            if (web != null) web.evaluateJavascript("window.toggleTalk && toggleTalk()", null);
+            return START_STICKY;
+        }
         if (web == null && Settings.canDrawOverlays(this)) show(intent);
         if (web == null) stopSelf();
+        running = web != null;
         return START_STICKY;
     }
 
@@ -62,6 +68,7 @@ public class OverlayService extends Service {
 
     @Override
     public void onDestroy() {
+        running = false;
         if (web != null) {
             windows.removeView(web);
             web.destroy();

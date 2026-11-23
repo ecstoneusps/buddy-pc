@@ -16,6 +16,7 @@ final class Recorder {
     private AudioRecord record;
     private Thread thread;
     private final ByteArrayOutputStream pcm = new ByteArrayOutputStream();
+    private volatile double level = -120;  // how loud the last bit was (dB), for "done talking"
 
     /** "ok", or why it couldn't start. */
     synchronized String start() {
@@ -55,6 +56,12 @@ final class Recorder {
             while (!Thread.currentThread().isInterrupted()) {
                 int n = r.read(buf, 0, buf.length);
                 if (n <= 0) break;
+                double sum = 0;
+                for (int i = 0; i + 1 < n; i += 2) {
+                    int v = (short) ((buf[i] & 0xff) | (buf[i + 1] << 8));
+                    sum += (double) v * v;
+                }
+                level = 10 * Math.log10(sum / Math.max(1, n / 2) / (32768.0 * 32768.0) + 1e-12);
                 synchronized (pcm) {
                     if (pcm.size() < MAX_BYTES) pcm.write(buf, 0, n);
                 }
@@ -62,6 +69,10 @@ final class Recorder {
         }, "buddy-mic");
         thread.start();
         return "ok";
+    }
+
+    double level() {
+        return level;
     }
 
     /** What was recorded, as a WAV in base64 ("" if nothing). */

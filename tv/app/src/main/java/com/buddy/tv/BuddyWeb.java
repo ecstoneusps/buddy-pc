@@ -85,6 +85,11 @@ final class BuddyWeb {
             }
 
             @JavascriptInterface
+            public double recLevel() {
+                return recorder.level();
+            }
+
+            @JavascriptInterface
             public String stopRec() {
                 return recorder.stop();
             }
