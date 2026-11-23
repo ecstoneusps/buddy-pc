@@ -64,6 +64,21 @@ The desk Buddy lives in
      he sees goes in Buddy's eyes' diary too ("Out and about: ...").
   To see him on the TV, AirPlay the phone to the Apple TV (Control Center,
   Screen Mirroring): his face and voice go to the TV, you talk into the phone.
+- **Buddy on the Google TV** (the `tv` app): full screen, or in a corner
+  over whatever you're watching. While it's open, the phone app offers
+  **Answer on the TV**: you talk into the phone, he answers on the TV.
+  To install it (once):
+  1. On the TV: install **Tailscale** from the Play Store and sign in.
+  2. On the TV: Settings, System, About, click **Android TV OS build** 7 times
+     (developer mode); then Settings, System, Developer options: turn on
+     **USB debugging** (and **Network debugging** if it's there). Note the
+     TV's IP address (Settings, Network).
+  3. On the PC: download **BuddyTV.apk** from this repo's Releases page
+     ("Buddy TV app") into the Buddy folder and run **install-tv-app.bat**.
+     It asks for the TV's IP address and Buddy's address.
+  On the remote: **OK** talks to him on the TV (if the TV's microphone can
+  be used), **Back** puts him in the corner, **hold Back** closes him. Open
+  the Buddy app again to bring him back full screen.
 - While he talks, **other apps are turned down** (videos, games, music: to
   `duck_others` = 40 % of their volume) and back up when he's done.
   `volume` (up to 300 %) makes him louder without distorting.
