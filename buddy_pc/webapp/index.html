@@ -17,7 +17,10 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
   body { display: flex; flex-direction: column; padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); }
-  #face { width: 100%; flex: 1 1 auto; min-height: 0; display: block; }
+  /* The face's box takes the space left; the canvas fills it exactly (on an
+     iPhone a canvas sized by its own pixels grew taller every frame). */
+  #facebox { flex: 1 1 0; min-height: 0; position: relative; }
+  #face { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #status { text-align: center; color: var(--dim); min-height: 1.4em; font-size: 15px; }
   #words { min-height: 4.4em; max-height: 30vh; overflow-y: auto; margin: 8px 0; font-size: 15px; }
   #words .you { color: var(--dim); }
@@ -36,7 +39,7 @@
 </style>
 </head>
 <body>
-<canvas id="face"></canvas>
+<div id="facebox"><canvas id="face"></canvas></div>
 <div id="status">Tap Talk, say something, tap again to send.</div>
 <div id="words"></div>
 <div id="controls">
@@ -153,8 +156,19 @@ const face = {
 };
 
 const canvas = document.getElementById("face"), ctx = canvas.getContext("2d");
+if (!ctx.roundRect) {  // (older iPhones)
+  ctx.roundRect = function (x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    this.moveTo(x + r, y); this.arcTo(x + w, y, x + w, y + h, r); this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r); this.arcTo(x, y, x + w, y, r); this.closePath();
+  };
+}
 let last = performance.now();
 function frame(now) {
+  try { drawFrame(now); } catch (e) { status("Face problem: " + e.message); }
+  requestAnimationFrame(frame);
+}
+function drawFrame(now) {
   const dpr = window.devicePixelRatio || 1, r = canvas.getBoundingClientRect();
   const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
@@ -165,7 +179,6 @@ function frame(now) {
   ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
   ctx.save(); ctx.translate((W - fw) / 2, (H - fh) / 2); face.draw(ctx, fw, fh); ctx.restore();
   document.documentElement.style.setProperty("--accent", `rgb(${face.cur.eyeR|0},${face.cur.eyeG|0},${face.cur.eyeB|0})`);
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
