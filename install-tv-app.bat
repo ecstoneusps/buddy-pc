@@ -22,8 +22,19 @@ if not exist platform-tools\adb.exe (
 )
 set ADB=platform-tools\adb.exe
 
+rem The TV from last time (already paired): straight there.
+if exist tv-address.txt (
+  set /p TV=<tv-address.txt
+)
+if defined TV (
+  %ADB% connect %TV% | find "connected to" >nul
+  if not errorlevel 1 goto connected
+)
+
 set /p TVIP=The TV's IP address (TV Settings, Network, your network): 
-set TV=%TVIP%:5555
+rem (An address with a port already, like 192.168.4.49:34963, is used as it is.)
+echo %TVIP% | find ":" >nul
+if errorlevel 1 (set TV=%TVIP%:5555) else (set TV=%TVIP%)
 %ADB% connect %TV% | find "connected to" >nul
 if not errorlevel 1 goto connected
 
@@ -45,6 +56,7 @@ if errorlevel 1 (
 )
 
 :connected
+echo %TV%>tv-address.txt
 echo Connected to the TV. If it asks "Allow debugging?", choose Always allow.
 
 echo Installing Buddy...
