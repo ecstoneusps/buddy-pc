@@ -259,7 +259,7 @@ async function show(reply) {
   if (!reply.heard) { face.set("confused"); status("I didn't catch that. Try again?");
     setTimeout(() => face.set("neutral"), 2000); return; }
   addWords("him", reply.text);
-  face.set(reply.emotion || "happy"); status("");
+  face.set(reply.emotion || "happy"); status(TV ? reply.text : "");  // (the TV has no words list)
   clearTimeout(lingerTimer);
   if (reply.audio && audioCtx) {
     const bytes = Uint8Array.from(atob(reply.audio), c => c.charCodeAt(0));
@@ -362,6 +362,16 @@ async function send(url, body, type) {
 let rec = null, chunks = [], stream = null, autoStop = null;
 async function startRecording() {
   unlockAudio(); stopTalking();
+  // On the TV, the app records with Android itself (the web view couldn't open
+  // the TV's microphone).
+  if (TV && window.BuddyTV && BuddyTV.startRec) {
+    const r = BuddyTV.startRec();
+    if (r !== "ok") { status("The TV's microphone: " + r); face.set("confused"); setTimeout(() => face.set("neutral"), 2500); return; }
+    rec = { native: true, state: "recording" };
+    face.set("listening"); status("Listening... press OK when you're done.");
+    autoStop = setTimeout(stopRecording, 20000);
+    return;
+  }
   audioMode("play-and-record");
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch (e) {
@@ -396,6 +406,13 @@ async function startRecording() {
 function stopRecording() {
   clearTimeout(autoStop);
   $("talk").classList.remove("on"); $("talk").textContent = "Talk";
+  if (rec && rec.native) {
+    rec = null;
+    const audio = BuddyTV.stopRec();
+    if (!audio || audio.length < 20000) { face.set("neutral"); status("That was too short. Press OK and speak."); return; }
+    send("/api/talk", JSON.stringify({ audio, type: "audio/wav" }), "application/json");
+    return;
+  }
   if (rec && rec.state !== "inactive") rec.stop();
 }
 $("talk").addEventListener("click", () => rec ? stopRecording() : startRecording());

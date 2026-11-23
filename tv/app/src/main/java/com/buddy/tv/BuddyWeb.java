@@ -74,6 +74,21 @@ final class BuddyWeb {
                 return out.toString();
             }
 
+            private final Recorder recorder = new Recorder();
+
+            @JavascriptInterface
+            public String startRec() {
+                if (c.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    return "not allowed (run install-tv-app.bat again)";
+                }
+                return recorder.start();
+            }
+
+            @JavascriptInterface
+            public String stopRec() {
+                return recorder.stop();
+            }
+
             @JavascriptInterface
             public String micAllowed() {
                 return c.checkSelfPermission(Manifest.permission.RECORD_AUDIO)
