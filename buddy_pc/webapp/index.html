@@ -187,12 +187,24 @@ const $ = id => document.getElementById(id);
 const status = t => { $("status").textContent = t; };
 let audioCtx = null, analyser = null, levelBuf = null, playing = null, lingerTimer = null;
 
+// After the microphone is used, an iPhone plays sound through the earpiece
+// (the one for calls), very quietly. Telling it this page plays sound puts
+// it back on the loudspeaker. (Safari 16.4 and later.)
+function audioMode(type) {
+  try { if (navigator.audioSession) navigator.audioSession.type = type; } catch (e) {}
+}
+
 function unlockAudio() {  // (iPhones only play sound started from a tap)
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioCtx.createAnalyser(); analyser.fftSize = 512;
     levelBuf = new Float32Array(analyser.fftSize);
-    analyser.connect(audioCtx.destination);
+    // A little louder, with a limiter so it doesn't crackle.
+    const gain = audioCtx.createGain(); gain.gain.value = 1.8;
+    const limit = audioCtx.createDynamicsCompressor();
+    limit.threshold.value = -6; limit.knee.value = 0; limit.ratio.value = 20;
+    limit.attack.value = 0.003; limit.release.value = 0.1;
+    analyser.connect(gain); gain.connect(limit); limit.connect(audioCtx.destination);
   }
   if (audioCtx.state === "suspended") audioCtx.resume();
 }
@@ -222,6 +234,8 @@ async function show(reply) {
     const bytes = Uint8Array.from(atob(reply.audio), c => c.charCodeAt(0));
     const buf = await audioCtx.decodeAudioData(bytes.buffer);
     stopTalking();
+    audioMode("playback");
+    if (audioCtx.state === "suspended") await audioCtx.resume();
     const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(analyser);
     playing = src;
     src.onended = () => { if (playing === src) playing = null; lingerTimer = setTimeout(() => face.set("neutral"), 1500); };
@@ -243,6 +257,7 @@ async function send(url, body, type) {
 let rec = null, chunks = [], stream = null, autoStop = null;
 async function startRecording() {
   unlockAudio(); stopTalking();
+  audioMode("play-and-record");
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch (e) { status("Buddy needs the microphone: allow it for this site in Settings."); return; }
   chunks = [];
@@ -250,6 +265,7 @@ async function startRecording() {
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
   rec.onstop = () => {
     stream.getTracks().forEach(t => t.stop());
+    audioMode("playback");  // back to the loudspeaker for his answer
     const blob = new Blob(chunks, { type: rec.mimeType || "audio/mp4" });
     rec = null;
     if (blob.size < 1000) { face.set("neutral"); status("That was too short. Tap Talk and speak."); return; }

@@ -100,7 +100,9 @@ class Web:
             if speech:
                 try:
                     rate, pcm = synthesize(self.cfg["kokoro_host"], self.cfg["kokoro_port"], speech, self.cfg["voice"])
-                    gain, _ = level_gain(pcm, 1.0)
+                    # Louder than at the desk: a phone's speaker is small (the
+                    # limiter keeps it clean).
+                    gain, _ = level_gain(pcm, 2.0)
                     audio = base64.b64encode(wav_bytes(rate, boost(pcm, gain))).decode()
                 except (OSError, RuntimeError, ValueError) as e:
                     self.log(f"phone: no voice for that ({e}); the words are shown")
